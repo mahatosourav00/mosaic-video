@@ -10,16 +10,25 @@ if you prefer).
 
 ## See it in action
 
-A 64 x 64 mosaic of **Earth** made from ~780 public-domain NASA photos, and the animation of it assembling
-(the *swarm* style):
+**Portrait.** A mosaic of Vermeer's *Girl with a Pearl Earring* made from about 1,200 NASA photos (4,500 tiles), and
+the animation of it assembling itself (the *vortex* style):
+
+<p align="center">
+  <img src="docs/images/sample-portrait.gif" alt="Animation: thousands of tiny photos swirl in and assemble into a portrait" width="40%">
+  <img src="docs/images/sample-portrait.jpg" alt="Finished mosaic of Girl with a Pearl Earring built from NASA photos" width="48%">
+</p>
+
+**Planet.** A 64 x 64 mosaic of **Earth** from ~780 NASA photos, and its animation (the *swarm* style):
 
 <p align="center">
   <img src="docs/images/sample-animation.gif" alt="Animation: thousands of tiny photos fly in and assemble into a picture of Earth" width="48%">
   <img src="docs/images/sample-mosaic.jpg" alt="Finished mosaic of Earth built from NASA photos" width="48%">
 </p>
 
-<sub>Made with Mosaic Studio from images in the [NASA Image and Video Library](https://images.nasa.gov/) (NASA media is
-generally not copyrighted). The GIF is a small, low-colour preview; the real MP4 is 1080p and far smoother.</sub>
+<sub>Made with Mosaic Studio. Tiles: the [NASA Image and Video Library](https://images.nasa.gov/) (NASA media is
+generally not copyrighted). Main pictures: NASA's Blue Marble, and *Girl with a Pearl Earring* (Johannes Vermeer,
+c. 1665, public domain, via [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Meisje_met_de_parel.jpg)).
+The GIFs are small, low-colour previews; the real MP4s are 1080p and far smoother.</sub>
 
 ## Download (Windows)
 
