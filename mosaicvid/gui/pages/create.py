@@ -13,7 +13,7 @@ from ..coffee import Signature
 from ..jobs import JobRunner
 from ..state import MOSAIC_SHAPES, STYLES, TILE_SHAPES, VIDEO_SHAPES, save_prefs
 from ..theme import C
-from ..widgets import Banner, OptionRow, PathPicker, card, clear_layout, hline, label
+from ..widgets import Banner, OptionRow, PathPicker, SliderField, Toggle, card, clear_layout, hline, label
 from .base import Page
 
 STAGE_TEXT = {"prepare": "Prepare photos", "solve": "Place every photo", "still": "Create the mosaic image",
@@ -60,6 +60,22 @@ class CreatePage(Page):
         self.warn.setVisible(False)
         fl.addWidget(self.warn)
         rl.addWidget(fc)
+        # plugin flows only: render a short slice to check the look before the full film
+        self.pv_card, pvl = card()
+        self.pv_toggle = Toggle(False)
+        self.pv_start = SliderField(0, 300, 40, 1, fmt=lambda v: f"{int(v)} s")
+        self.pv_len = SliderField(5, 60, 20, 1, fmt=lambda v: f"{int(v)} s")
+        pvl.addWidget(OptionRow("Preview a short slice only", None, self.pv_toggle,
+                                "Renders just part of the film, without music, so you can check the look quickly."))
+        self.pv_start_row = OptionRow("Start at", None, self.pv_start)
+        self.pv_len_row = OptionRow("Length", None, self.pv_len)
+        pvl.addWidget(self.pv_start_row)
+        pvl.addWidget(self.pv_len_row)
+        self.pv_toggle.toggled.connect(self._preview_changed)
+        self.pv_start.changed.connect(lambda _v: self._preview_changed())
+        self.pv_len.changed.connect(lambda _v: self._preview_changed())
+        self.pv_card.setVisible(False)
+        rl.addWidget(self.pv_card)
         self.body.addWidget(self.ready)
 
         # ---------------------------------------------------------------- running view
@@ -151,6 +167,7 @@ class CreatePage(Page):
         self.body.addWidget(self.error)
         self.body.addStretch(1)
         self._stage_labels: dict[str, QLabel] = {}
+        self._stage_text = dict(STAGE_TEXT)
 
     # ------------------------------------------------------------------ page hooks
     def on_enter(self):
@@ -165,11 +182,34 @@ class CreatePage(Page):
         self._fill_summary()
         self._check_overwrite()
         self.title_lb.setText("Review and create")
+        pv = st.plugin.manifest.get("preview") if st.plugin_id else None
+        self.pv_card.setVisible(bool(pv))
+        if pv:
+            d = st.plugin_preview
+            if not d:
+                d.update(on=False, start=pv.get("start", 0), seconds=pv.get("seconds", 20))
+            self.pv_toggle.setChecked(bool(d["on"]))
+            self.pv_start.set_value(d["start"], emit=False)
+            self.pv_len.set_value(d["seconds"], emit=False)
+            self.pv_start_row.setVisible(bool(d["on"]))
+            self.pv_len_row.setVisible(bool(d["on"]))
+
+    def _preview_changed(self):
+        d = self.state.plugin_preview
+        d.update(on=self.pv_toggle.isChecked(), start=self.pv_start.value(), seconds=self.pv_len.value())
+        self.pv_start_row.setVisible(d["on"])
+        self.pv_len_row.setVisible(d["on"])
+        self.changed.emit()
 
     def validate(self) -> str | None:
         return None if self.state.out_dir else "Choose where to save."
 
     def button_text(self) -> str:
+        st = self.state
+        if st.plugin_id:
+            if st.plugin_preview.get("on") and st.plugin.manifest.get("preview"):
+                return "Render preview"
+            return st.plugin.manifest.get("button", "Create")
         return {"image": "Create image", "video": "Create video", "both": "Create image + video"}[self.state.goal]
 
     # ------------------------------------------------------------------ summary
@@ -177,6 +217,9 @@ class CreatePage(Page):
         clear_layout(self.summary)
         st, s = self.state, self.state.settings
         self.summary.addWidget(label("Your choices", "h2"))
+        if st.plugin_id:
+            self._fill_plugin_summary()
+            return
         rows = [("Making", {"image": "A mosaic image", "video": "A mosaic video", "both": "A mosaic image and video"}[st.goal])]
         if st.use_existing:
             rows.append(("From", Path(st.scene).parent.name + " (saved mosaic)"))
@@ -214,6 +257,34 @@ class CreatePage(Page):
         wrap.setLayout(grid)
         self.summary.addWidget(wrap)
 
+    def _fill_plugin_summary(self):
+        st, pl = self.state, self.state.plugin
+        vals = st.values_of(pl.id)
+        by_key = {f["key"]: f for f in pl.fields()}
+        rows = [("Making", pl.name)]
+        if pl.needs_mosaic:
+            rows += [("Photos", f"{st.n_photos:,} in \u201c{Path(st.tiles_dir).name}\u201d"),
+                     ("Main picture", Path(st.main_image).name)]
+        for k in pl.manifest.get("summary") or []:
+            f, v = by_key[k], vals.get(k)
+            if f["type"] in ("file", "folder"):
+                v = Path(v).name if v else "none"
+            elif f["type"] == "list":
+                v = " / ".join(v) if v else "none"
+            elif f["type"] == "toggle":
+                v = "Yes" if v else "No"
+            rows.append((f.get("label", k), str(v) if str(v).strip() else "none"))
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(24)
+        grid.setVerticalSpacing(8)
+        for i, (k, v) in enumerate(rows):
+            grid.addWidget(label(k, "muted"), i, 0, Qt.AlignTop)
+            grid.addWidget(label(v, "", wrap=True), i, 1)
+        grid.setColumnStretch(1, 1)
+        wrap = QWidget()
+        wrap.setLayout(grid)
+        self.summary.addWidget(wrap)
+
     def _folder_changed(self, p: str):
         self.state.out_dir = p
         self.folder.title_lb.setText(Path(p).name)
@@ -224,7 +295,7 @@ class CreatePage(Page):
     def _check_overwrite(self):
         d = Path(self.state.out_dir)
         hit = list(d.glob("mosaic.*")) + ([d / "scene.json"] if (d / "scene.json").exists() else [])
-        if hit and not self.state.use_existing:
+        if hit and not self.state.use_existing and not self.state.plugin_id:
             self.warn.set_text("This folder already has a mosaic in it. Creating again will replace it. "
                                "Pick another folder to keep both.", "warn")
             self.warn.setVisible(True)
@@ -245,7 +316,11 @@ class CreatePage(Page):
         self.sub_lb.setText("")
         self._stage_labels.clear()
         clear_layout(self.stage_box)
-        order = (["prepare", "render"] if st.use_existing else
+        self._stage_text = dict(STAGE_TEXT)
+        if st.plugin_id:
+            self._stage_text.update(dict(st.plugin.stages()))
+        order = ([k for k, _ in st.plugin.stages()] if st.plugin_id else
+                 ["prepare", "render"] if st.use_existing else
                  ["prepare", "solve", "still"] + (["render"] if st.makes_video else []))
         for k in order:
             lb = QLabel()
@@ -257,7 +332,7 @@ class CreatePage(Page):
         self._t0 = time.time()
         self.timer.start(500)
         self._set_phase("running")
-        job = st.to_job("video" if st.use_existing else st.goal)
+        job = st.to_job() if st.plugin_id else st.to_job("video" if st.use_existing else st.goal)
         self.runner.start(job)
 
     def _cancel(self):
@@ -277,7 +352,7 @@ class CreatePage(Page):
         weight = 700 if state == "doing" else 500
         lb.setText(f"<span style='color:{col}; font-weight:700;'>{icon}</span>&nbsp;&nbsp;"
                    f"<span style='color:{C['text'] if state != 'todo' else C['faint']}; font-weight:{weight};'>"
-                   f"{STAGE_TEXT[key]}</span>")
+                   f"{self._stage_text.get(key, key)}</span>")
 
     def _event(self, ev: dict):
         k = ev.get("event")
@@ -327,16 +402,20 @@ class CreatePage(Page):
                     break
         self.thumb.setPixmap(pm.scaled(260, 260, Qt.KeepAspectRatio, Qt.SmoothTransformation) if not pm.isNull()
                              else QPixmap())
-        self.res_title.setText({"image": "Your mosaic image", "video": "Your mosaic video",
-                                "both": "Your mosaic image and video"}[st.goal])
+        if st.plugin_id:
+            self.res_title.setText(st.plugin.manifest.get("result", {}).get("title", st.plugin.name))
+        else:
+            self.res_title.setText({"image": "Your mosaic image", "video": "Your mosaic video",
+                                    "both": "Your mosaic image and video"}[st.goal])
         st_s = ev.get("stats") or {}
         note = ""
         if st_s.get("max_uses_raised"):
             note = "Some photos were used a few extra times because there were not enough photos for the detail you chose."
-        self.res_text.setText(note or "Open it, or try a different animation style from the same mosaic in seconds.")
+        self.res_text.setText("Open it to watch." if st.plugin_id else
+                              note or "Open it, or try a different animation style from the same mosaic in seconds.")
         self.btn_image.setVisible("image" in o)
         self.btn_video.setVisible("video" in o)
-        self.btn_more.setVisible("scene" in o)
+        self.btn_more.setVisible("scene" in o and not st.plugin_id)
         self._set_phase("done")
 
     def _show_error(self, ev: dict):

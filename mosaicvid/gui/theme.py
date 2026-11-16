@@ -64,9 +64,9 @@ QToolButton#Help:hover {{ background: {c['accent_soft']}; color: white; border-c
 QToolButton#Link {{ background: transparent; border: none; color: {c['accent2']}; font-weight: 600; }}
 QToolButton#Link:hover {{ color: white; }}
 
-QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {{ background: {c['surface']}; border: 1px solid {c['border_hi']};
+QLineEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QComboBox {{ background: {c['surface']}; border: 1px solid {c['border_hi']};
     border-radius: 9px; padding: 8px 10px; selection-background-color: {c['accent']}; }}
-QLineEdit:focus, QSpinBox:focus, QComboBox:focus {{ border-color: {c['accent']}; }}
+QLineEdit:focus, QPlainTextEdit:focus, QSpinBox:focus, QComboBox:focus {{ border-color: {c['accent']}; }}
 QComboBox::drop-down {{ border: none; width: 22px; }}
 QComboBox QAbstractItemView {{ background: {c['card2']}; border: 1px solid {c['border_hi']}; selection-background-color:
     {c['accent_soft']}; padding: 4px; }}

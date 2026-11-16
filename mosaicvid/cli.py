@@ -55,6 +55,21 @@ def _inspect(a) -> int:
     return 0
 
 
+def _plugins(a) -> int:
+    from . import plugins as P
+    try:
+        if a.action == "link":
+            print(f"linked plugin '{P.link(a.folder)}' from {Path(a.folder).resolve()}")
+        elif a.action == "unlink":
+            print("unlinked" if P.unlink(a.folder) else "that folder was not linked")
+    except (P.PluginError, TypeError) as e:
+        print(f"error: {e}")
+        return 1
+    for p in P.discover().values():
+        print(f"  {p.id:<14} {p.name}  v{p.manifest.get('version', '?')}  {p.path}")
+    return 0
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="mosaicvid")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -82,6 +97,9 @@ def main(argv=None) -> int:
     i.add_argument("--tiles", required=True)
     i.add_argument("--out", required=True)
     i.add_argument("--cache-px", type=int)
+    pl = sub.add_parser("plugins", help="list, link or unlink plugin folders (see mosaicvid/plugins.py)")
+    pl.add_argument("action", choices=["list", "link", "unlink"])
+    pl.add_argument("folder", nargs="?", help="plugin project folder (link / unlink)")
     r = sub.add_parser("run", help="run a job file (used by the GUI); prints one JSON event per line")
     r.add_argument("--job", required=True, help="job JSON file (see mosaicvid/runner.py)")
     v = sub.add_parser("video", help="render the animation video from a built scene.json")
@@ -110,11 +128,18 @@ def main(argv=None) -> int:
         return _video(a)
     if a.cmd == "inspect":
         return _inspect(a)
+    if a.cmd == "plugins":
+        return _plugins(a)
     if a.cmd == "run":
         import json
         from .runner import run_job
         job = json.loads(Path(a.job).read_text(encoding="utf-8"))
-        return run_job(job, lambda ev: print(json.dumps(ev), flush=True))
+        out = sys.stdout            # bound now: a plugin may redirect sys.stdout while it works, events must still get out
+
+        def emit(ev):
+            out.write(json.dumps(ev) + "\n")
+            out.flush()
+        return run_job(job, emit)
 
     s = Settings.from_json(a.settings) if a.settings else Settings()
     for k, v in vars(a).items():

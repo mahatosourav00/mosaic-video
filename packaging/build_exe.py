@@ -97,6 +97,7 @@ def main() -> int:
         "--collect-data", "cv2",                  # face-detection model files
         "--hidden-import", "glcontext",           # OpenGL context for the video renderer
         "--hidden-import", "moderngl",
+        "--hidden-import", "scipy.interpolate",   # plugins are loaded by path, so PyInstaller cannot see what they import
     ]
     for m in EXCLUDE:
         args += ["--exclude-module", m]

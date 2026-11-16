@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPen, QBrush
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from ..theme import C
 from ..coffee import Signature
@@ -12,10 +12,10 @@ from ..widgets import label
 class GoalArt(QWidget):
     """Little illustration for each goal card."""
 
-    def __init__(self, kind: str):
+    def __init__(self, kind: str, height: int = 120):
         super().__init__()
         self.kind = kind
-        self.setFixedHeight(120)
+        self.setFixedHeight(height)
 
     def paintEvent(self, _):
         p = QPainter(self)
@@ -65,7 +65,7 @@ class GoalArt(QWidget):
 class GoalCard(QFrame):
     clicked = Signal(str)
 
-    def __init__(self, key: str, title: str, text: str, chips: list[str]):
+    def __init__(self, key: str, title: str, text: str, chips: list[str], compact: bool = False):
         super().__init__()
         self.key = key
         self.setObjectName("Card")
@@ -74,7 +74,7 @@ class GoalCard(QFrame):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(20, 20, 20, 20)
         lay.setSpacing(12)
-        lay.addWidget(GoalArt(key))
+        lay.addWidget(GoalArt(key, 64 if compact else 120))
         lay.addWidget(label(title, "title"))
         lay.addWidget(label(text, "sub", wrap=True))
         lay.addStretch(1)
@@ -104,7 +104,7 @@ class GoalCard(QFrame):
 class HomePage(QWidget):
     chosen = Signal(str)
 
-    def __init__(self):
+    def __init__(self, plugins: dict | None = None):
         super().__init__()
         self.setObjectName("Page")
         lay = QVBoxLayout(self)
@@ -129,6 +129,20 @@ class HomePage(QWidget):
             c.clicked.connect(self.chosen)
             row.addWidget(c)
         lay.addLayout(row)
+        if plugins:                                   # one card per installed plugin, three to a row
+            lay.addSpacing(22)
+            lay.addWidget(label("Made for a purpose", "h2"))
+            grid = QGridLayout()
+            grid.setHorizontalSpacing(22)
+            grid.setVerticalSpacing(22)
+            for i, pl in enumerate(plugins.values()):
+                c = GoalCard(f"plugin:{pl.id}", pl.name, pl.manifest.get("description", ""),
+                             list(pl.manifest.get("chips") or []), compact=True)
+                c.clicked.connect(self.chosen)
+                grid.addWidget(c, i // 3, i % 3)
+            for col in range(3):
+                grid.setColumnStretch(col, 1)
+            lay.addLayout(grid)
         lay.addStretch(1)
         foot = QHBoxLayout()
         foot.addWidget(label("Tip: you can drag a folder of photos onto the next screen.", "faint"))

@@ -5,7 +5,7 @@ separate process (responsive window, cancel = kill). The runner reports through 
 `run` command prints each event as one JSON line.
 
 Job keys
-    mode        "image" | "video" | "both" | "inspect"
+    mode        "image" | "video" | "both" | "inspect" | "plugin"
     tiles_dir   folder of tile photos           (image / both / inspect)
     main_image  the picture to recreate         (image / both)
     out_dir     output folder
@@ -14,6 +14,7 @@ Job keys
     preview     bool, render a fast low-res draft video
     video_name  optional output file name (without extension)
     cache_dir   optional shared cache folder (a preview run reuses the real run's cache)
+    plugin      {"id": ..., "values": {field key: value}}   (mode "plugin"; see plugins.py)
 
 Events
     {"event": "start", "mode": ...}
@@ -112,16 +113,93 @@ def _render(emit: Emit, m, tiles, s: Settings, out_dir: Path, job: dict, cache_d
     return out
 
 
+def _prepare_and_solve(job: dict, emit: Emit, s: Settings, out_dir: Path):
+    """Stages 'prepare' and 'solve': usable tiles + the solved Mosaic."""
+    from .preprocess import prepare_tiles
+    from .solver import solve
+    emit({"event": "stage", "stage": "prepare", "label": "Preparing your photos"})
+    tiles = prepare_tiles(job["tiles_dir"], s, cache_dir=_cache(job, out_dir),
+                          progress=_progress(emit, "prepare", every=10))
+    emit({"event": "info", "message": f"{len(tiles)} photos are usable"})
+    if len(tiles) < 2:
+        raise ValueError("Fewer than 2 usable photos were found in that folder.")
+    emit({"event": "stage", "stage": "solve", "label": "Placing every photo"})
+    return tiles, solve(tiles, job["main_image"], s)
+
+
+def _mosaic_key(job: dict, s: Settings) -> str:
+    """Fingerprint of everything that shapes a mosaic, so a plugin re-run (new message, other music...) can skip it."""
+    import hashlib
+    import json
+    from dataclasses import asdict
+    main = Path(job.get("main_image", ""))
+    st = main.stat() if main.is_file() else None
+    blob = json.dumps([job.get("tiles_dir"), str(main), st and [st.st_size, int(st.st_mtime)],
+                       asdict(s)], sort_keys=True, default=str)
+    return hashlib.sha1(blob.encode()).hexdigest()
+
+
+def _run_plugin_job(job: dict, emit: Emit, t0: float) -> int:
+    """Mode 'plugin': (build the mosaic if the plugin needs one) then hand over to the plugin's run(ctx)."""
+    import json
+    from . import plugins as P
+    spec = job.get("plugin") or {}
+    found = P.discover()
+    plugin = found.get(spec.get("id"))
+    if plugin is None:
+        raise ValueError(f"The plugin '{spec.get('id')}' is not installed.")
+    _need(job, "out_dir")
+    out_dir = Path(job["out_dir"])
+    out_dir.mkdir(parents=True, exist_ok=True)
+    s = _settings(job)
+    for k, v in ((plugin.manifest.get("mosaic") or {}).get("settings") or {}).items():
+        if hasattr(s, k):
+            setattr(s, k, v)
+    ctx = P.PluginContext(plugin=plugin, job=job, values=P.fill_defaults(plugin, spec.get("values")), emit=emit,
+                          out_dir=out_dir, preview=bool(job.get("preview")), settings=s,
+                          tiles_dir=job.get("tiles_dir", ""), main_image=job.get("main_image", ""))
+    if plugin.needs_mosaic:
+        if job.get("scene"):                                         # an existing mosaic was given
+            scene = Path(job["scene"])
+            ctx.scene, ctx.cache_dir = scene, scene.parent / "cache"
+        else:
+            _need(job, "tiles_dir", "main_image")
+            s.validate()
+            if s.cell_px > s.cache_px:
+                s.cache_px = min(s.cell_px, 512)
+            key, keyfile = _mosaic_key(job, s), out_dir / "plugin_mosaic.json"
+            scene = out_dir / "scene.json"
+            same = False
+            try:
+                same = scene.is_file() and json.loads(keyfile.read_text(encoding="utf-8")).get("key") == key
+            except (OSError, ValueError):
+                pass
+            if same:
+                emit({"event": "info", "message": "Reusing the mosaic you built earlier"})
+            else:
+                from .solver import save_scene
+                tiles, m = _prepare_and_solve(job, emit, s, out_dir)
+                save_scene(m, s, scene)
+                keyfile.write_text(json.dumps({"key": key}), encoding="utf-8")
+            ctx.scene, ctx.cache_dir = scene, _cache(job, out_dir)
+    outputs = P.run_plugin(plugin, ctx)
+    emit({"event": "result", "outputs": outputs, "stats": {}, "seconds": round(time.time() - t0, 1)})
+    return 0
+
+
 def run_job(job: dict, emit: Emit) -> int:
     """Run a job; returns 0 on success, 1 on error (an 'error' event is emitted first)."""
     t0 = time.time()
     try:
         mode = job.get("mode")
-        if mode not in ("image", "video", "both", "inspect"):
+        if mode not in ("image", "video", "both", "inspect", "plugin"):
             raise ValueError(f"Unknown mode '{mode}'")
         emit({"event": "start", "mode": mode})
         outputs: dict = {}
         stats: dict = {}
+
+        if mode == "plugin":
+            return _run_plugin_job(job, emit, t0)
 
         # ---------------------------------------------------------------- inspect (preprocess report only)
         if mode == "inspect":
@@ -158,23 +236,14 @@ def run_job(job: dict, emit: Emit) -> int:
             return 0
 
         # ---------------------------------------------------------------- build the mosaic (image / both)
-        from .preprocess import prepare_tiles
-        from .solver import render_still, save_scene, solve
+        from .solver import render_still, save_scene
         _need(job, "tiles_dir", "main_image", "out_dir")
         s = _settings(job)
         s.validate()
         out_dir = Path(job["out_dir"])
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        emit({"event": "stage", "stage": "prepare", "label": "Preparing your photos"})
-        tiles = prepare_tiles(job["tiles_dir"], s, cache_dir=_cache(job, out_dir),
-                              progress=_progress(emit, "prepare", every=10))
-        emit({"event": "info", "message": f"{len(tiles)} photos are usable"})
-        if len(tiles) < 2:
-            raise ValueError("Fewer than 2 usable photos were found in that folder.")
-
-        emit({"event": "stage", "stage": "solve", "label": "Placing every photo"})
-        m = solve(tiles, job["main_image"], s)
+        tiles, m = _prepare_and_solve(job, emit, s, out_dir)
         stats = dict(m.stats)
 
         if s.print_width_px:
