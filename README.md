@@ -37,7 +37,11 @@ The GIFs are small, low-colour previews; the real MP4s are 1080p and far smoothe
 
 Nothing else needs to be installed: Python, Qt, OpenCV and FFmpeg are inside.
 
-> Windows may say **"Windows protected your PC"** because the app is not code-signed yet. Click **More info**, then **Run anyway**.
+> Windows may say **"Windows protected your PC"** (SmartScreen). That is because the app is new and not yet code-signed,
+> not because anything is wrong: the full source code is in this repository. Click **More info**, then **Run anyway**.
+>
+> To check that your download is genuine, compare its checksum with `SHA256SUMS.txt` on the release page:
+> `Get-FileHash .\MosaicStudio-vX.Y.Z-windows.zip` in PowerShell.
 
 Requirements: Windows 10 / 11 (64-bit). Videos are rendered with OpenGL, so you need a graphics driver that supports
 OpenGL 3.3 (an integrated GPU is fine).
