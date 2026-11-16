@@ -1,0 +1,8 @@
+numpy
+scipy
+pillow
+opencv-python
+imagehash
+imageio-ffmpeg
+moderngl
+pytest

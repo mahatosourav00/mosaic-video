@@ -1,0 +1,29 @@
+# Python / environments
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+
+# Generated media and build outputs (large and often personal) - never commit
+output/
+cache/
+*.mp4
+*.webm
+*.gif
+*.mov
+*.npy
+*.rej
+scene.json
+settings.json
+main_crop.jpg
+subject_map.png
+mosaic.png
+
+# Personal / separate-project material
+BIRTHDAY_PROJECT_BRIEF.md
+demo/
+
+# Local tool settings / assistant notes
+CLAUDE.md
+.claude/settings.local.json
