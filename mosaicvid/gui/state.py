@@ -50,6 +50,9 @@ class AppState:
     print_w: float = 24.0                 # width in `print_unit`
     print_unit: str = "in"                # in | cm
     print_dpi: int = 300
+    px_on: bool = False                   # image only: exact pixel size (instead of screen / print)
+    px_val: int = 4096                    # that size, in pixels
+    px_by: str = "w"                      # w = px_val is the width, h = it is the height
     settings: Settings = field(default_factory=Settings)
 
     def __post_init__(self):
@@ -84,7 +87,9 @@ class AppState:
             s.min_sharpness, s.min_side = 0.0, 0
         if self.makes_video:
             s.crf = 18 if self.quality == "high" else 23
-        if self.print_on and self.makes_image:
+        if self.px_on and self.makes_image:
+            s.print_width_px, s.print_dpi = self.pixel_size()[0], 0
+        elif self.print_on and self.makes_image:
             s.print_width_px = self.print_pixels()[0]
             s.print_dpi = int(self.print_dpi)
         else:
@@ -104,14 +109,24 @@ class AppState:
             job["tiles_dir"], job["main_image"] = self.tiles_dir, self.main_image
         return job
 
-    def print_pixels(self) -> tuple[int, int]:
-        """Requested image size in pixels (width, height) from the physical size, unit, DPI and shape."""
+    def ratio(self) -> float:
+        """Width / height of the mosaic image."""
         s = self.settings
         if s.mosaic_aspect == "image":
-            r = self.image_ratio or 1.0
-        else:
-            a, b = (float(v) for v in s.mosaic_aspect.split(":"))
-            r = a / b
+            return self.image_ratio or 1.0
+        a, b = (float(v) for v in s.mosaic_aspect.split(":"))
+        return a / b
+
+    def pixel_size(self) -> tuple[int, int]:
+        """Exact-pixel mode: (width, height) when px_val is the width (px_by 'w') or the height ('h')."""
+        r = self.ratio()
+        if self.px_by == "h":
+            return int(round(self.px_val * r)), int(self.px_val)
+        return int(self.px_val), int(round(self.px_val / r))
+
+    def print_pixels(self) -> tuple[int, int]:
+        """Requested image size in pixels (width, height) from the physical size, unit, DPI and shape."""
+        r = self.ratio()
         w_in = self.print_w / (2.54 if self.print_unit == "cm" else 1.0)
         return int(round(w_in * self.print_dpi)), int(round(w_in * self.print_dpi / r))
 
@@ -122,7 +137,7 @@ class AppState:
 
 
 PRESET_KEYS = ("skip_prep", "filter_bad", "quality", "preset", "aspect_touched", "print_on", "print_w", "print_unit",
-               "print_dpi")
+               "print_dpi", "px_on", "px_val", "px_by")
 PRIVATE = ("extra_tile_dirs", "exclude_dirs")           # tied to this person's folders, never saved in a preset
 
 

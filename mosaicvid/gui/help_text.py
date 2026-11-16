@@ -77,11 +77,18 @@ HELP: dict[str, tuple[str, str, str]] = {
     "gap_color": ("Gap colour",
                   "The colour of the thin line between tiles when a gap is set. Black looks like grout in a dark "
                   "mosaic; white looks like a light frame around each tile.", "Black"),
+    "also_video": ("Also make a video",
+                   "Every mosaic also gives you the finished picture. Switch this on to get an animation of the "
+                   "mosaic assembling itself as well; you will choose its style, length and quality on the next "
+                   "page. Switch it off if you only want the picture: the build is then a little faster. You can "
+                   "always make videos from a saved mosaic later.", "On"),
     "print_size": ("Output size",
                    "Screen is quick and sized for viewing on a display. Print size makes the image big and sharp enough "
                    "for a poster at the size and DPI you choose, and saves the DPI inside the file so print shops "
                    "get it right. 300 DPI is standard for printing; 150 is fine for large posters seen from a "
-                   "distance.", "Screen for sharing, Print for posters"),
+                   "distance. Exact pixels lets you type the width or height in pixels (or pick Full HD, 4K, 8K...) when "
+                   "you need a specific size for a website, wallpaper or screen. The other side follows your "
+                   "mosaic's shape.", "Screen for sharing, Print for posters"),
     "preview": ("Preview before building",
                 "Builds a small, fast draft so you can check the arrangement and colours before spending time on "
                 "the final result. The final mosaic has exactly the same arrangement, just sharper.", ""),

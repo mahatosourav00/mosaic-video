@@ -105,5 +105,5 @@ class Signature(QWidget):
         self.button.setStyleSheet(f"QPushButton {{ color: {C['accent2']}; text-align: left; padding: 6px 8px;"
                                   f" font-size: 12px; }} QPushButton:hover {{ color: white; }}")
         self.button.clicked.connect(lambda: CoffeeDialog(self.window()).exec())
-        self.button.setVisible(branding.has_upi())
         lay.addWidget(self.button, 0, Qt.AlignLeft)
+        self.button.setVisible(branding.has_upi())

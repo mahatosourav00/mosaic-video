@@ -185,3 +185,26 @@ def test_tile_and_video_shapes(tmp_path):
     from mosaicvid.animation import make_plan
     p = make_plan(m, tiles, s)
     assert np.isfinite(p.inst).all()
+
+
+def test_video_only_job_from_photos_renders_the_video(tmp_path, monkeypatch):
+    """Goal 'video' with new photos (no saved mosaic) must build the mosaic AND render the video."""
+    from mosaicvid import runner
+    rng = np.random.default_rng(11)
+    d = tmp_path / "tiles"; d.mkdir()
+    for i in range(24):
+        make_photo(rng).save(d / f"p{i}.jpg")
+    main = tmp_path / "main.png"
+    make_photo(rng, 300, 400).save(main)
+    calls = []
+    monkeypatch.setattr(runner, "_render", lambda emit, m, tiles, s, out_dir, job, cache_dir=None:
+                        calls.append(job["mode"]) or (out_dir / "mosaic_swarm.mp4"))
+    ev = []
+    rc = runner.run_job({"mode": "video", "tiles_dir": str(d), "main_image": str(main), "out_dir": str(tmp_path / "out"),
+                         "settings": {"num_tiles": 120, "cell_px": 16, "max_uses": 12, "min_distance": 2, "dedupe": False,
+                                      "min_sharpness": 0, "smart_crop": False}}, ev.append)
+    assert rc == 0, ev[-1]
+    assert calls == ["video"]
+    out = ev[-1]["outputs"]
+    assert "video" in out and "scene" in out and "image" not in out       # a video job does not offer an image
+    assert (tmp_path / "out" / "scene.json").exists()

@@ -222,7 +222,8 @@ class OptionRow(QWidget):
         outer = QHBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(20)
-        left = QVBoxLayout()
+        wl = QWidget()                       # owns the labels from the start (see note below)
+        left = QVBoxLayout(wl)
         left.setContentsMargins(0, 0, 0, 0)
         left.setSpacing(3)
         head = QHBoxLayout()
@@ -235,10 +236,8 @@ class OptionRow(QWidget):
         head.addStretch(1)
         left.addLayout(head)
         self.desc_lb = label(desc, "muted", wrap=True)
-        self.desc_lb.setVisible(bool(desc))
-        left.addWidget(self.desc_lb)
-        wl = QWidget()
-        wl.setLayout(left)
+        left.addWidget(self.desc_lb)         # NOTE: always put a widget in a layout BEFORE setVisible(True): a
+        self.desc_lb.setVisible(bool(desc))  # parentless widget made visible pops up as its own window (a flash)
         wl.setMinimumWidth(240)
         wl.setMaximumWidth(330)
         outer.addWidget(wl, 3)
@@ -267,12 +266,12 @@ class Banner(QFrame):
         self.btn = QPushButton(action_text)
         self.btn.setObjectName("Ghost")
         self.btn.setStyleSheet(f"color: {C['accent2']};")
-        self.btn.setVisible(bool(action_text))
         if on_action:
             self.btn.clicked.connect(on_action)
         lay.addWidget(self.icon, 0, Qt.AlignTop)
         lay.addWidget(self.text_lb, 1)
         lay.addWidget(self.btn)
+        self.btn.setVisible(bool(action_text))
         self.set_kind(kind)
 
     def set_kind(self, kind: str):

@@ -42,6 +42,13 @@ class JobRunner(QObject):
         p.readyReadStandardOutput.connect(self._read)
         p.finished.connect(self._done)
         p.errorOccurred.connect(self._error)
+        if sys.platform == "win32":                # never let the engine open a console window of its own
+            def _no_console(args):
+                args.flags |= 0x08000000               # CREATE_NO_WINDOW
+            try:
+                p.setCreateProcessArgumentsModifier(_no_console)
+            except Exception:
+                pass
         self.proc = p
         if getattr(sys, "frozen", False):          # packaged .exe: the same exe runs the engine
             p.setWorkingDirectory(str(Path(sys.executable).parent))

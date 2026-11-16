@@ -187,12 +187,14 @@ def run_job(job: dict, emit: Emit) -> int:
         emit({"event": "stage", "stage": "still", "label": "Creating the mosaic image"})
         img = render_still(m, tiles, s)
         stats["image_px"] = [int(img.shape[1]), int(img.shape[0])]
-        outputs["image"] = str(save_image(img, out_dir, s))
+        image_path = save_image(img, out_dir, s)                # still always saved: it is the result thumbnail
+        if mode != "video":
+            outputs["image"] = str(image_path)
         save_scene(m, s, out_dir / "scene.json")
         s.to_json(out_dir / "settings.json")
         outputs["scene"] = str(out_dir / "scene.json")
 
-        if mode == "both":
+        if mode in ("both", "video"):                           # "video" here = new photos, no saved mosaic yet
             outputs["video"] = str(_render(emit, m, tiles, s, out_dir, job, cache_dir=_cache(job, out_dir)))
 
         emit({"event": "result", "outputs": outputs, "stats": stats, "seconds": round(time.time() - t0, 1)})

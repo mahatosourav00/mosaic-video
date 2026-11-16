@@ -51,12 +51,15 @@ class GoalArt(QWidget):
             from PySide6.QtCore import QPointF
             cx, cy = w / 2, h / 2
             p.drawPolygon(QPolygonF([QPointF(cx - 6, cy - 10), QPointF(cx - 6, cy + 10), QPointF(cx + 10, cy)]))
-        else:
-            mosaic(w / 2 - 70, 22, 70, 6)
-            mosaic(w / 2 + 2, 22, 70, 6)
-            p.setPen(QPen(QColor("white"), 2))
-            p.setBrush(Qt.NoBrush)
-            p.drawText(w / 2 - 8, h - 14, "+")
+        else:                                   # "both": the mosaic with a small play badge in the corner
+            mosaic(w / 2 - 44, 14, 88, 8)
+            from PySide6.QtCore import QPointF
+            from PySide6.QtGui import QPolygonF
+            cx, cy = w / 2 + 40, h - 26
+            p.setBrush(QColor(0, 0, 0, 170))
+            p.drawEllipse(QPointF(cx, cy), 15, 15)
+            p.setBrush(QColor("white"))
+            p.drawPolygon(QPolygonF([QPointF(cx - 4, cy - 7), QPointF(cx - 4, cy + 7), QPointF(cx + 7, cy)]))
 
 
 class GoalCard(QFrame):
@@ -107,19 +110,20 @@ class HomePage(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(56, 52, 56, 40)
         lay.setSpacing(8)
-        lay.addWidget(label("What would you like to create?", "display"))
-        lay.addWidget(label("Turn a folder of photos into one big picture made of tiny photos, or a cinematic "
-                            "animation of it coming together. Everything runs on your computer.", "sub", wrap=True))
+        lay.addWidget(label("What would you like to do?", "display"))
+        lay.addWidget(label("Turn a folder of photos into one big picture made of tiny photos, and, if you like, a "
+                            "cinematic animation of it coming together. Everything runs on your computer.",
+                            "sub", wrap=True))
         lay.addSpacing(26)
         row = QHBoxLayout()
         row.setSpacing(22)
         cards = [
-            GoalCard("image", "Mosaic image", "One high-resolution picture, built from your photos. Perfect for "
-                     "prints and sharing.", ["Fastest", "PNG"]),
-            GoalCard("video", "Mosaic video", "A cinematic animation of the mosaic assembling itself, in four "
-                     "styles. You can also reuse a mosaic you already built.", ["MP4 · GIF · WebM"]),
-            GoalCard("both", "Image + video", "Get both in one go: the finished image and the animation, made "
-                     "from the same mosaic.", ["Best value"]),
+            GoalCard("both", "Create a mosaic", "Pick your photos and a main picture. You get the finished "
+                     "high-resolution image, and can add an animation of it assembling itself.",
+                     ["Image", "Optional video"]),
+            GoalCard("video", "New video from a saved mosaic", "Already built a mosaic with Mosaic Studio? Try a "
+                     "different animation style or format in seconds, without rebuilding it.",
+                     ["MP4 · GIF · WebM"]),
         ]
         for c in cards:
             c.clicked.connect(self.chosen)

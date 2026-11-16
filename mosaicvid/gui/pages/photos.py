@@ -75,10 +75,9 @@ class PhotosPage(Page):
     # ------------------------------------------------------------------
     def on_enter(self):
         st = self.state
-        self.exist_card.setVisible(st.makes_video and st.goal == "video")
-        if st.goal != "video":
-            st.use_existing = False
-            self.exist_toggle.setChecked(False)
+        self.exist_card.setVisible(False)              # the home screen decides: saved mosaic or new photos
+        st.use_existing = st.goal == "video"
+        self.exist_toggle.setChecked(st.use_existing)
         self._existing_toggled(st.use_existing)
         if st.tiles_dir and not self.tiles.path:
             self.tiles.set_path(st.tiles_dir, emit=False)

@@ -93,7 +93,7 @@ class MainWindow(QMainWindow):
     def start_flow(self, goal: str):
         st = self.state
         st.goal = goal
-        st.use_existing = False
+        st.use_existing = goal == "video"          # "video" = a new video from a mosaic saved earlier
         st.scene = ""
         self.create.reset()
         self.top.setCurrentIndex(1)
@@ -114,8 +114,8 @@ class MainWindow(QMainWindow):
             self.step = len(keys) - 1
         pg = self.pages[keys[self.step]]
         self.rail.set_steps([RAIL_NAMES[k] for k in keys], self.step)
-        self.rail.foot.setText({"image": "Making a mosaic image", "video": "Making a mosaic video",
-                                "both": "Making an image and a video"}[self.state.goal])
+        self.rail.foot.setText({"image": "Making a mosaic image", "video": "Making a video from a saved mosaic",
+                                "both": "Making a mosaic"}[self.state.goal])
         last = keys[self.step] == "create"
         phase = self.create.phase if last else "ready"
         self.back_btn.setVisible(phase in ("ready", "error", "done") or not last)

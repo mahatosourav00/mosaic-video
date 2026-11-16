@@ -35,11 +35,10 @@ OpenGL 3.3 (an integrated GPU is fine).
 
 ## What you can make
 
-| Goal | You get |
+| Choice | You get |
 |---|---|
-| **Mosaic image** | One high-resolution picture built from your photos: PNG, JPEG, WebP or TIFF, for screens or for print. |
-| **Mosaic video** | An animation of the mosaic assembling itself, in four styles, as MP4 (H.264 / H.265), WebM or GIF, 720p to 4K. A mosaic you built earlier can be reused to try new styles in seconds. |
-| **Both** | The finished image and the animation, from the same mosaic. |
+| **Create a mosaic** | The finished high-resolution picture built from your photos (PNG, JPEG, WebP or TIFF, for screens or for print). A switch on the *Design mosaic* page adds an **animation** of it assembling itself, in four styles, as MP4 (H.264 / H.265), WebM or GIF, 720p to 4K. |
+| **New video from a saved mosaic** | Reuse a mosaic you built earlier to try a different animation style or format in seconds, without rebuilding it. |
 
 ## The app
 

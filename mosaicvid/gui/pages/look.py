@@ -12,6 +12,15 @@ PRESET_TEXT = {
     "balanced": "Balanced: detailed and still quick. The right choice for most pictures.",
     "best": "Best quality: finer detail and a sharper image. Takes noticeably longer.",
 }
+DETAIL = {"rough": ("Rough", 800), "normal": ("Normal", 1500), "fine": ("Fine", 3000)}
+COLOUR = {"natural": ("Natural", 0.3), "balanced": ("Balanced", 0.6), "vivid": ("Vivid", 0.9)}
+
+
+def _nearest(table: dict, value: float) -> str:
+    """Key of the entry whose number is closest to `value` (plain-word buttons over a slider)."""
+    return min(table, key=lambda k: abs(table[k][1] - value))
+
+
 PCT = lambda v: f"{int(round(v * 100))}%"                      # noqa: E731
 
 
@@ -23,6 +32,14 @@ class LookPage(Page):
     def __init__(self, state):
         super().__init__(state)
         s = state.settings
+        adv = Collapsible("Show advanced options")
+        # ---------------------------------------------------------------- also make a video?
+        self.video_card, vlay = self.section()
+        self.video_sw = Toggle(state.goal != "image")
+        self.video_sw.toggled.connect(self._video_switch)
+        vlay.addWidget(OptionRow("Also make an animation video", "also_video", self.video_sw,
+                                 "An animation of the mosaic assembling itself. You choose its style on the next "
+                                 "page, and you can make more videos from the same mosaic later."))
         # ---------------------------------------------------------------- preview
         pv, play = card(QHBoxLayout, flat=True)
         txt = QVBoxLayout()
@@ -51,33 +68,31 @@ class LookPage(Page):
         self.shape.changed.connect(self._shape)
         self.shape_row = OptionRow("Mosaic shape", "shape", self.shape, "Match where you will show it.")
         lay.addWidget(self.shape_row)
-        lay.addWidget(hline())
         self.tile_shape = Segmented([(k, v) for k, v in TILE_SHAPES.items()], s.tile_aspect)
         self.tile_shape.changed.connect(lambda k: setattr(s, "tile_aspect", k))
-        lay.addWidget(OptionRow("Tile shape", "tile_shape", self.tile_shape,
-                                "The shape of each photo in the mosaic."))
 
         # ---------------------------------------------------------------- main controls
         f2, lay2 = self.section("Look and feel")
         self.detail = SliderField(500, 6000, s.num_tiles, 100, lambda v: f"{int(v):,} tiles", recommended=1500)
         self.detail.changed.connect(self._detail)
-        lay2.addWidget(OptionRow("Detail", "detail", self.detail, "More tiles = finer picture, slower build."))
+        self.detail_seg = Segmented([(k, t) for k, (t, _) in DETAIL.items()], _nearest(DETAIL, s.num_tiles))
+        self.detail_seg.changed.connect(lambda k: self.detail.set_value(DETAIL[k][1], emit=True))
+        lay2.addWidget(OptionRow("Detail", "detail", self.detail_seg,
+                                 "Fine = more, smaller tiles: a sharper picture but a slower build."))
         self.advice = Banner("tip", "")
         lay2.addWidget(self.advice)
-        lay2.addWidget(hline())
         self.repeats = SliderField(0, 30, s.max_uses, 1, lambda v: "Auto" if v == 0 else f"{int(v)} times",
                                    recommended=0)
         self.repeats.changed.connect(lambda v: setattr(s, "max_uses", int(v)))
-        lay2.addWidget(OptionRow("Most times one photo can appear", "repeats", self.repeats))
         lay2.addWidget(hline())
         self.colour = SliderField(0, 1, s.tint, 0.05, PCT, recommended=0.6)
-        self.colour.changed.connect(lambda v: setattr(s, "tint", float(v)))
-        lay2.addWidget(OptionRow("Colour match", "colour", self.colour, "How strongly tiles take the picture's colours."))
-        lay2.addWidget(hline())
+        self.colour.changed.connect(self._colour)
+        self.colour_seg = Segmented([(k, t) for k, (t, _) in COLOUR.items()], _nearest(COLOUR, s.tint))
+        self.colour_seg.changed.connect(lambda k: self.colour.set_value(COLOUR[k][1], emit=True))
+        lay2.addWidget(OptionRow("Colour match", "colour", self.colour_seg,
+                                 "How strongly the tiles take on the picture's colours."))
         self.faces = SliderField(0, 1, s.subject_weight, 0.05, PCT, recommended=0.6)
         self.faces.changed.connect(lambda v: setattr(s, "subject_weight", float(v)))
-        lay2.addWidget(OptionRow("Focus on faces and subject", "faces", self.faces,
-                                 "Extra care where it matters most."))
 
         lay2.addWidget(hline())
         self.gray = Toggle(s.grayscale)
@@ -86,7 +101,8 @@ class LookPage(Page):
 
         # ---------------------------------------------------------------- image-only
         self.img_card, lay3 = self.section("Mosaic image")
-        self.out_mode = Segmented([("screen", "Screen"), ("print", "Print size")], "print" if state.print_on else "screen")
+        self.out_mode = Segmented([("screen", "Screen"), ("print", "Print size"), ("pixels", "Exact pixels")],
+                             self._mode(state))
         self.out_mode.changed.connect(self._out_mode)
         lay3.addWidget(OptionRow("Output size", "print_size", self.out_mode))
         self.print_box = QWidget()
@@ -114,13 +130,42 @@ class LookPage(Page):
         self.print_info = Banner("tip", "")
         pb.addWidget(self.print_info)
         lay3.addWidget(self.print_box)
+        # exact pixel size
+        self.px_box = QWidget()
+        xb = QVBoxLayout(self.px_box)
+        xb.setContentsMargins(0, 0, 0, 0)
+        xb.setSpacing(10)
+        xr = QHBoxLayout()
+        self.px_by = Segmented([("w", "Width"), ("h", "Height")], state.px_by)
+        self.px_by.changed.connect(self._size_changed)
+        self.px_spin = QSpinBox()
+        self.px_spin.setRange(256, 40000)
+        self.px_spin.setSingleStep(256)
+        self.px_spin.setSuffix(" px")
+        self.px_spin.setValue(state.px_val)
+        self.px_spin.setFixedWidth(130)
+        self.px_spin.valueChanged.connect(self._size_changed)
+        xr.addWidget(self.px_by)
+        xr.addWidget(self.px_spin)
+        xr.addStretch(1)
+        xb.addLayout(xr)
+        qr = QHBoxLayout()
+        qr.addWidget(label("Quick sizes", "muted"))
+        for txt, v in (("Full HD", 1920), ("4K", 3840), ("8K", 7680), ("12K", 12288), ("16K", 15360)):
+            b = QPushButton(txt)
+            b.clicked.connect(lambda _=False, v=v: self.px_spin.setValue(v))
+            qr.addWidget(b)
+        qr.addStretch(1)
+        xb.addLayout(qr)
+        self.px_info = Banner("tip", "")
+        xb.addWidget(self.px_info)
+        lay3.addWidget(self.px_box)
         lay3.addWidget(hline())
         self.size = Segmented([("32", "Draft"), ("64", "Standard"), ("96", "Large"), ("128", "Max")], str(s.cell_px))
         self.size.changed.connect(lambda k: setattr(s, "cell_px", int(k)))
         self.size_row = OptionRow("Image sharpness", "size", self.size)
         lay3.addWidget(self.size_row)
-        self.print_box.setVisible(state.print_on)
-        self.size_row.setVisible(not state.print_on)
+        self._show_mode(self._mode(state))
         lay3.addWidget(hline())
         self.img_fmt = Segmented([("png", "PNG"), ("jpg", "JPEG"), ("webp", "WebP"), ("tiff", "TIFF")], s.image_format)
         self.img_fmt.changed.connect(self._img_format)
@@ -130,13 +175,25 @@ class LookPage(Page):
         self.quality_row = OptionRow("Quality", "image_quality", self.quality)
         lay3.addWidget(self.quality_row)
         self.quality_row.setVisible(s.image_format in ("jpg", "webp"))
-        lay3.addWidget(hline())
         self.blend = SliderField(0, 0.4, s.main_blend, 0.01, PCT, recommended=0.10)
         self.blend.changed.connect(lambda v: setattr(s, "main_blend", float(v)))
-        lay3.addWidget(OptionRow("Main picture showing through", "blend", self.blend))
 
         # ---------------------------------------------------------------- advanced
-        adv = Collapsible("Advanced options")
+        adv.inner.addWidget(OptionRow("Exact number of tiles", "detail", self.detail))
+        adv.inner.addWidget(hline())
+        adv.inner.addWidget(OptionRow("Colour match strength", "colour", self.colour))
+        adv.inner.addWidget(hline())
+        adv.inner.addWidget(OptionRow("Tile shape", "tile_shape", self.tile_shape,
+                                      "The shape of each photo in the mosaic."))
+        adv.inner.addWidget(hline())
+        adv.inner.addWidget(OptionRow("Most times one photo can appear", "repeats", self.repeats))
+        adv.inner.addWidget(hline())
+        adv.inner.addWidget(OptionRow("Focus on faces and subject", "faces", self.faces,
+                                      "Extra care where it matters most."))
+        adv.inner.addWidget(hline())
+        self.blend_row = OptionRow("Main picture showing through", "blend", self.blend)
+        adv.inner.addWidget(self.blend_row)
+        adv.inner.addWidget(hline())
         self.spread = SliderField(0, 12, s.min_distance, 1, lambda v: f"{int(v)} tiles", recommended=6)
         self.spread.changed.connect(lambda v: setattr(s, "min_distance", float(v)))
         adv.inner.addWidget(OptionRow("Keep repeats apart", "spread", self.spread))
@@ -183,7 +240,13 @@ class LookPage(Page):
     def on_enter(self):
         st = self.state
         s = st.settings
+        self.video_card.setVisible(st.goal != "video")
+        self.video_sw.blockSignals(True)
+        self.video_sw.setChecked(st.makes_video)
+        self.video_sw.blockSignals(False)
+        self.video_sw.update()
         self.img_card.setVisible(st.makes_image)
+        self.blend_row.setVisible(st.makes_image)
         self.shape.set_value(s.mosaic_aspect)
         self.tile_shape.set_value(s.tile_aspect)
         self.shape_row.set_desc("Shape of your " + ("mosaic image." if st.goal == "image" else
@@ -197,6 +260,7 @@ class LookPage(Page):
         p = PRESETS[key]
         s.num_tiles, s.cell_px = p["num_tiles"], p["cell_px"]
         self.detail.set_value(s.num_tiles, emit=False)
+        self.detail_seg.set_value(_nearest(DETAIL, s.num_tiles))
         self.size.set_value(str(s.cell_px))
         self.preset_lb.setText(PRESET_TEXT[key])
         self._advice()
@@ -210,6 +274,8 @@ class LookPage(Page):
         self.detail.set_value(s.num_tiles, emit=False)
         self.repeats.set_value(s.max_uses, emit=False)
         self.colour.set_value(s.tint, emit=False)
+        self.detail_seg.set_value(_nearest(DETAIL, s.num_tiles))
+        self.colour_seg.set_value(_nearest(COLOUR, s.tint))
         self.faces.set_value(s.subject_weight, emit=False)
         self.size.set_value(str(s.cell_px))
         self.img_fmt.set_value(s.image_format)
@@ -229,28 +295,51 @@ class LookPage(Page):
             t.blockSignals(False)
             t.update()
         self.sub_row.setEnabled(s.use_subtiles)
-        self.out_mode.set_value("print" if st.print_on else "screen")
-        self.print_box.setVisible(st.print_on)
-        self.size_row.setVisible(not st.print_on)
-        for w, v in ((self.pw, st.print_w),):
+        self.out_mode.set_value(self._mode(st))
+        self._show_mode(self._mode(st))
+        for w, v in ((self.pw, st.print_w), (self.px_spin, st.px_val)):
             w.blockSignals(True)
             w.setValue(v)
             w.blockSignals(False)
+        self.px_by.set_value(st.px_by)
         self.punit.set_value(st.print_unit)
         self.pdpi.set_value(str(st.print_dpi))
         self._gap_swatch()
         self._print_changed()
         self._advice()
 
+    @staticmethod
+    def _mode(st) -> str:
+        return "pixels" if st.px_on else "print" if st.print_on else "screen"
+
+    def _show_mode(self, mode: str):
+        self.print_box.setVisible(mode == "print")
+        self.px_box.setVisible(mode == "pixels")
+        self.size_row.setVisible(mode == "screen")
+
     def _out_mode(self, key: str):
         st = self.state
-        st.print_on = key == "print"
-        self.print_box.setVisible(st.print_on)
-        self.size_row.setVisible(not st.print_on)
+        st.print_on, st.px_on = key == "print", key == "pixels"
+        self._show_mode(key)
         self._print_changed()
+
+    def _size_changed(self, *_):
+        st = self.state
+        st.px_val = int(self.px_spin.value())
+        st.px_by = self.px_by.value()
+        w, h = st.pixel_size()
+        mp = w * h / 1e6
+        txt = f"{w:,} x {h:,} pixels  ·  {mp:.0f} megapixels"
+        if mp > 400:
+            self.px_info.set_text(txt + ". That is more than the 400 MP limit, so it will be made a little smaller.", "warn")
+        elif mp > 120:
+            self.px_info.set_text(txt + ". Large: expect a long build and a big file.", "warn")
+        else:
+            self.px_info.set_text(txt, "tip")
 
     def _print_changed(self, *_):
         st = self.state
+        self._size_changed()
         st.print_w = float(self.pw.value())
         st.print_unit = self.punit.value()
         st.print_dpi = int(self.pdpi.value())
@@ -294,7 +383,16 @@ class LookPage(Page):
 
     def _detail(self, v: float):
         self.state.settings.num_tiles = int(v)
+        self.detail_seg.set_value(_nearest(DETAIL, v))
         self._advice()
+
+    def _video_switch(self, on: bool):
+        self.state.goal = "both" if on else "image"
+        self.changed.emit()                      # the step list (rail) gains or loses "Design video"
+
+    def _colour(self, v: float):
+        self.state.settings.tint = float(v)
+        self.colour_seg.set_value(_nearest(COLOUR, v))
 
     def _subtiles(self, on: bool):
         self.state.settings.use_subtiles = on

@@ -142,24 +142,24 @@ class VideoPage(Page):
         self.quality.changed.connect(self._quality)
         self.q_row = OptionRow("Quality", "quality", self.quality)
         lay2.addWidget(self.q_row)
-        lay2.addWidget(hline())
         self.res = Segmented([("720", "720p"), ("1080", "1080p"), ("1440", "1440p"), ("2160", "4K")],
                              str(s.video_res))
         self.res.changed.connect(lambda k: setattr(s, "video_res", int(k)))
-        lay2.addWidget(OptionRow("Resolution", "resolution", self.res, "Short side of the video, in pixels."))
-        lay2.addWidget(hline())
         self.fmt = Segmented([("mp4", "MP4"), ("mp4-h265", "MP4 (H.265)"), ("webm", "WebM"), ("gif", "GIF")],
                              s.video_format)
         self.fmt.changed.connect(lambda k: setattr(s, "video_format", k))
-        lay2.addWidget(OptionRow("File type", "format", self.fmt))
-        lay2.addWidget(hline())
         self.vshape = Segmented([(k, v) for k, v in VIDEO_SHAPES.items()], s.video_aspect)
         self.vshape.changed.connect(lambda k: setattr(s, "video_aspect", k))
-        lay2.addWidget(OptionRow("Video shape", "video_shape", self.vshape,
-                                 "By default the video has the same shape as your mosaic."))
 
         # ---------------------------------------------------------------- advanced
-        adv = Collapsible("Advanced options")
+        adv = Collapsible("Show advanced options")
+        adv.inner.addWidget(OptionRow("Resolution", "resolution", self.res, "Short side of the video, in pixels."))
+        adv.inner.addWidget(hline())
+        adv.inner.addWidget(OptionRow("File type", "format", self.fmt))
+        adv.inner.addWidget(hline())
+        adv.inner.addWidget(OptionRow("Video shape", "video_shape", self.vshape,
+                                      "By default the video has the same shape as your mosaic."))
+        adv.inner.addWidget(hline())
         self.adv_sliders: dict[str, SliderField] = {}
         self.fps = Segmented([("30", "30 fps"), ("60", "60 fps")], str(s.fps))
         self.fps.changed.connect(lambda k: setattr(s, "fps", int(k)))

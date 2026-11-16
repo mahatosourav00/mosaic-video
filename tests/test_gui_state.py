@@ -1,5 +1,5 @@
 """GUI logic that needs no window: which steps are shown and how choices become an engine job."""
-from mosaicvid.gui.state import AppState, nearest_aspect
+from mosaicvid.gui.state import AppState, apply_preset, nearest_aspect, to_preset
 
 
 def test_steps_follow_the_goal():
@@ -121,3 +121,15 @@ def test_coffee_dialog_shows_the_whole_qr_and_it_scans():
     a = np.frombuffer(img.constBits(), np.uint8).reshape(img.height(), img.bytesPerLine())[:, : img.width() * 3]
     text, _, _ = cv2.QRCodeDetector().detectAndDecode(a.reshape(img.height(), img.width(), 3).copy())
     assert text == branding.upi_uri()
+
+
+def test_exact_pixels_by_width_or_height_and_preset_round_trip():
+    s = AppState(goal="image", image_ratio=1.5, px_on=True, px_val=3840)
+    assert s.pixel_size() == (3840, 2560)
+    d = s.final_settings()
+    assert (d["print_width_px"], d["print_dpi"]) == (3840, 0)
+    s.px_by = "h"
+    assert s.pixel_size() == (5760, 3840)
+    t = AppState()
+    apply_preset(t, to_preset(s))
+    assert (t.px_on, t.px_val, t.px_by) == (True, 3840, "h")

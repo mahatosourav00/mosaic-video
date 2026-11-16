@@ -412,7 +412,9 @@ def render_video(m: Mosaic, tiles, s: Settings, out_path: str | Path, preview: b
     proj = perspective(FOV_DEG, W / H, 0.5, plan.d_full * 6)
 
     total = int(round((max_seconds or D) * fps))
-    proc = subprocess.Popen(_ffmpeg_cmd(s, W, H, fps, out_path), stdin=subprocess.PIPE)
+    # ffmpeg is a console program: started from the windowed app it would open (and keep) a black console window
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    proc = subprocess.Popen(_ffmpeg_cmd(s, W, H, fps, out_path), stdin=subprocess.PIPE, creationflags=flags)
     try:
         for i in range(total):
             t = i / fps
