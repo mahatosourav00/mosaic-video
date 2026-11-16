@@ -14,6 +14,8 @@ from .pages.look import LookPage
 from .pages.photos import PhotosPage
 from .pages.prepare import PreparePage
 from .pages.video import VideoPage
+from .plugin_form import PluginStepPage
+from .. import plugins as plugin_api
 from .state import AppState, apply_preset, load_prefs, to_preset
 from .widgets import StepRail, label
 
@@ -27,7 +29,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Mosaic Studio")
         self.resize(1200, 800)
         self.setMinimumSize(1020, 700)
+        self.rail_names = dict(RAIL_NAMES)
         self.state = AppState()
+        self.state.plugins = plugin_api.discover()           # manifests only; plugin code runs in the engine process
         load_prefs(self.state)
         root = QWidget()
         root.setObjectName("Root")
@@ -37,9 +41,8 @@ class MainWindow(QMainWindow):
         self.top = QStackedWidget()
         outer.addWidget(self.top)
 
-        self.home = HomePage()
-        self.home.chosen.connect(self.start_flow)
-        self.top.addWidget(self.home)
+        self.home = None
+        self._make_home()
 
         flow = QWidget()
         fl = QHBoxLayout(flow)
@@ -59,6 +62,7 @@ class MainWindow(QMainWindow):
             pg.changed.connect(self._refresh)
             self.pages[pg.key] = pg
             self.stack.addWidget(pg)
+        self._make_plugin_pages()
         self.create: CreatePage = self.pages["create"]
         self.create.phase_changed.connect(lambda _p: self._refresh())
         self.create.make_another.connect(self._make_another)
@@ -85,6 +89,48 @@ class MainWindow(QMainWindow):
         self.top.addWidget(flow)
         self.step = 0
 
+    # ------------------------------------------------------------------ plugins
+    def _make_home(self):
+        """(Re)build the home screen: it lists the installed plugins."""
+        old = self.home
+        self.home = HomePage(self.state.plugins)
+        self.home.chosen.connect(self.start_flow)
+        self.home.add_plugin.connect(self._add_plugin)
+        self.top.insertWidget(0, self.home)
+        if old is not None:
+            self.top.removeWidget(old)
+            old.setParent(None)
+            old.deleteLater()
+        self.top.setCurrentIndex(0)
+
+    def _make_plugin_pages(self):
+        for pl in self.state.plugins.values():               # the form steps of every plugin (new ones only)
+            for i in range(len(pl.steps)):
+                key = f"plugin.{pl.id}.{i}"
+                if key in self.pages:
+                    continue
+                pg = PluginStepPage(self.state, pl, i)
+                pg.changed.connect(self._refresh)
+                self.pages[pg.key] = pg
+                self.stack.addWidget(pg)
+                self.rail_names[pg.key] = pg.title
+
+    def _add_plugin(self):
+        folder = QFileDialog.getExistingDirectory(self, "Choose the plugin's folder (it contains plugin.json)",
+                                                  str(Path.home() / "Downloads"))
+        if not folder:
+            return
+        try:
+            pid = plugin_api.link(folder)
+        except plugin_api.PluginError as e:
+            QMessageBox.warning(self, "Could not add the plugin", str(e))
+            return
+        self.state.plugins = plugin_api.discover()
+        self._make_plugin_pages()
+        self._make_home()
+        QMessageBox.information(self, "Plugin added",
+                                f"\u201c{self.state.plugins[pid].name}\u201d is now on the home screen.")
+
     # ------------------------------------------------------------------ navigation
     @property
     def keys(self) -> list[str]:
@@ -95,6 +141,8 @@ class MainWindow(QMainWindow):
         st.goal = goal
         st.use_existing = goal == "video"          # "video" = a new video from a mosaic saved earlier
         st.scene = ""
+        st.plugin_preview = {}
+        st.out_dir = st.out_dir if not st.plugin_id else ""      # a plugin's folder name depends on what is made
         self.create.reset()
         self.top.setCurrentIndex(1)
         self._go(0)
@@ -113,9 +161,11 @@ class MainWindow(QMainWindow):
         if self.step >= len(keys):
             self.step = len(keys) - 1
         pg = self.pages[keys[self.step]]
-        self.rail.set_steps([RAIL_NAMES[k] for k in keys], self.step)
-        self.rail.foot.setText({"image": "Making a mosaic image", "video": "Making a video from a saved mosaic",
-                                "both": "Making a mosaic"}[self.state.goal])
+        self.rail.set_steps([self.rail_names[k] for k in keys], self.step)
+        self.rail.foot.setText(
+            self.state.plugin.name if self.state.plugin_id else
+            {"image": "Making a mosaic image", "video": "Making a video from a saved mosaic",
+             "both": "Making a mosaic"}[self.state.goal])
         last = keys[self.step] == "create"
         phase = self.create.phase if last else "ready"
         self.back_btn.setVisible(phase in ("ready", "error", "done") or not last)

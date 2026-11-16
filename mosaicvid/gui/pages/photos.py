@@ -75,6 +75,9 @@ class PhotosPage(Page):
     # ------------------------------------------------------------------
     def on_enter(self):
         st = self.state
+        ph = (st.plugin.manifest.get("photos") or {}) if st.plugin_id else {}
+        self.title_lb.setText(ph.get("title", self.title))
+        self.sub_lb.setText(ph.get("subtitle", self.subtitle))
         self.exist_card.setVisible(False)              # the home screen decides: saved mosaic or new photos
         st.use_existing = st.goal == "video"
         self.exist_toggle.setChecked(st.use_existing)

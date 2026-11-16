@@ -6,6 +6,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QSettings
 
+from .. import plugins as plugin_api
 from ..settings import Settings
 
 ASPECTS = {"9:16": "Story  9:16", "4:5": "Portrait  4:5", "1:1": "Square  1:1", "16:9": "Wide  16:9"}
@@ -54,6 +55,9 @@ class AppState:
     px_val: int = 4096                    # that size, in pixels
     px_by: str = "w"                      # w = px_val is the width, h = it is the height
     settings: Settings = field(default_factory=Settings)
+    plugins: dict = field(default_factory=dict)              # id -> plugins.Plugin (manifests only, no plugin code)
+    plugin_values: dict = field(default_factory=dict)        # id -> {field key: value}
+    plugin_preview: dict = field(default_factory=dict)       # {"on": bool, "start": s, "seconds": s} (review screen)
 
     def __post_init__(self):
         s = self.settings
@@ -62,7 +66,25 @@ class AppState:
         s.style, s.hero_tiles = "swarm", 18
 
     # ---- which pages are shown
+    @property
+    def plugin_id(self) -> str:
+        """The plugin being used ('' for the built-in mosaic flows). The goal of a plugin flow is 'plugin:<id>'."""
+        return self.goal[7:] if self.goal.startswith("plugin:") else ""
+
+    @property
+    def plugin(self):
+        return self.plugins.get(self.plugin_id)
+
+    def values_of(self, pid: str) -> dict:
+        """Current form values of a plugin, created from the manifest's defaults on first use."""
+        if pid not in self.plugin_values and pid in self.plugins:
+            self.plugin_values[pid] = self.plugins[pid].defaults()
+        return self.plugin_values.setdefault(pid, {})
+
     def steps(self) -> list[str]:
+        if self.plugin_id:
+            p = self.plugin
+            return (["photos"] if p and p.needs_mosaic else []) + plugin_api.step_keys(self.plugin_id, self.plugins) + ["create"]
         if self.goal == "image":
             return ["photos", "prepare", "look", "create"]
         if self.use_existing:
@@ -98,7 +120,21 @@ class AppState:
         d["gap_color"], d["bg_color"] = list(s.gap_color), list(s.bg_color)
         return d
 
+    def plugin_job(self) -> dict:
+        p = self.plugin
+        job = {"mode": "plugin", "out_dir": self.out_dir, "settings": self.final_settings(), "preview": False,
+               "plugin": {"id": p.id, "values": dict(self.values_of(p.id))}}
+        if p.needs_mosaic:
+            job["tiles_dir"], job["main_image"] = self.tiles_dir, self.main_image
+        pv = self.plugin_preview
+        if pv.get("on") and p.manifest.get("preview"):
+            job["preview"] = True
+            job["plugin"]["preview"] = {"start": pv.get("start", 0), "seconds": pv.get("seconds", 20)}
+        return job
+
     def to_job(self, mode: str | None = None) -> dict:
+        if self.plugin_id and mode is None:
+            return self.plugin_job()
         mode = mode or self.goal
         job = {"mode": mode, "out_dir": self.out_dir, "settings": self.final_settings(),
                "preview": self.quality == "draft" and mode in ("video", "both")}
@@ -133,6 +169,8 @@ class AppState:
     def default_out_dir(self) -> str:
         base = Path.home() / "Documents" / "Mosaic Studio"
         name = Path(self.main_image).stem if self.main_image else "mosaic"
+        if self.plugin_id:
+            name = f"{self.plugin_id}_{name}"
         return str(base / name)
 
 
@@ -146,7 +184,8 @@ def to_preset(state: AppState) -> dict:
     for k in PRIVATE:
         s.pop(k, None)
     s["gap_color"], s["bg_color"] = list(s["gap_color"]), list(s["bg_color"])
-    return {"app": "MosaicStudio", "version": 1, "settings": s, "choices": {k: getattr(state, k) for k in PRESET_KEYS}}
+    return {"app": "MosaicStudio", "version": 1, "settings": s, "choices": {k: getattr(state, k) for k in PRESET_KEYS},
+            "plugins": {pid: dict(vals) for pid, vals in state.plugin_values.items()}}
 
 
 def apply_preset(state: AppState, data: dict) -> None:
@@ -162,6 +201,12 @@ def apply_preset(state: AppState, data: dict) -> None:
     for k, v in (data.get("choices") or {}).items():
         if k in PRESET_KEYS:
             setattr(state, k, v)
+    for pid, vals in (data.get("plugins") or {}).items():       # plugin forms: only keys the installed plugin knows
+        if pid in state.plugins and isinstance(vals, dict):
+            cur = state.values_of(pid)                          # in place: the form controls hold this dict
+            for k, v in vals.items():
+                if k in cur:
+                    cur[k] = v
 
 
 # ---- remembered between sessions
