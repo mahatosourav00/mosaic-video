@@ -14,7 +14,7 @@ COLORS = {"ok": (60, 180, 90), "rotated": (60, 170, 230), "trimmed": (240, 170, 
 
 def _thumb(rec: Record, tiles, cell: int) -> Image.Image:
     if rec.status == "ok" and rec.tile_index >= 0:
-        im = Image.fromarray(tiles[rec.tile_index].image).resize((cell, cell), Image.LANCZOS)
+        im = _fit(Image.fromarray(tiles[rec.tile_index].image), cell)
     else:
         try:
             im = Image.fromarray(load_rgb(rec.path, max_side=cell * 2))
@@ -24,6 +24,13 @@ def _thumb(rec: Record, tiles, cell: int) -> Image.Image:
     bg = Image.new("RGB", (cell, cell), (24, 24, 24))
     bg.paste(im, ((cell - im.width) // 2, (cell - im.height) // 2))
     return bg
+
+
+def _fit(im: Image.Image, cell: int) -> Image.Image:
+    im.thumbnail((cell, cell), Image.LANCZOS)
+    out = Image.new("RGB", (cell, cell), (14, 14, 18))
+    out.paste(im, ((cell - im.width) // 2, (cell - im.height) // 2))
+    return out
 
 
 def _sheet(recs: list[Record], tiles, title: str, cell=144, cols=10, label_h=26) -> Image.Image:

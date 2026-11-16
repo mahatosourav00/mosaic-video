@@ -166,8 +166,8 @@ class PhotosPage(Page):
         self.state.main_image = p
         r = QImageReader(p)
         sz = r.size()
-        if sz.isValid() and not self.state.aspect_touched:
-            self.state.settings.video_aspect = nearest_aspect(sz.width(), sz.height())
+        if sz.isValid() and sz.height() > 0:
+            self.state.image_ratio = sz.width() / sz.height()
         self.changed.emit()
 
     def _scene_changed(self, p: str):

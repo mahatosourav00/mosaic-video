@@ -161,3 +161,27 @@ def test_black_and_white_print_size_and_dpi(tmp_path):
         assert im.size == (w, h) and round(im.info["dpi"][0]) == 300
         a = np.asarray(im.convert("RGB")).astype(int)
     assert np.abs(a[..., 0] - a[..., 1]).max() <= 3 and np.abs(a[..., 1] - a[..., 2]).max() <= 3   # grey
+
+
+def test_tile_and_video_shapes(tmp_path):
+    rng = np.random.default_rng(3)
+    d = tmp_path / "tiles"; d.mkdir()
+    for i in range(30):
+        make_photo(rng).save(d / f"p{i}.jpg")
+    main = tmp_path / "main.png"
+    make_photo(rng, 400, 300).save(main)                     # 4:3 picture
+    s = Settings(num_tiles=200, cell_px=16, tile_aspect="3:2", dedupe=False, min_sharpness=0)
+    tiles = prepare_tiles(d, s, cache_dir=tmp_path / "c")
+    assert abs(tiles[0].image.shape[1] / tiles[0].image.shape[0] - 1.5) < 0.02
+    m = solve(tiles, main, s)
+    assert abs(s.mosaic_ratio - 400 / 300) < 0.15            # mosaic follows the picture
+    assert abs(m.world_w / m.rows - s.mosaic_ratio) < 1e-9
+    W, H = s.video_dims()
+    assert abs(W / H - s.mosaic_ratio) < 0.02                # video defaults to the mosaic's shape
+    img = render_still(m, tiles, s)
+    assert img.shape == (m.rows * 16, m.cols * 24, 3)
+    s.video_aspect = "9:16"
+    assert s.video_dims() == (1080, 1920)
+    from mosaicvid.animation import make_plan
+    p = make_plan(m, tiles, s)
+    assert np.isfinite(p.inst).all()

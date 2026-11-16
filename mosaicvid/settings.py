@@ -13,7 +13,9 @@ IMAGE_FORMATS = {"png": "png", "jpg": "jpg", "webp": "webp", "tiff": "tif"}     
 class Settings:
     # ---- layout -------------------------------------------------------
     num_tiles: int = 1500            # approx. number of base cells
-    tile_shape: str = "square"       # only "square" implemented for now
+    tile_aspect: str = "1:1"         # tile shape W:H (1:1 square, 4:3 landscape, 3:4 portrait, ...)
+    mosaic_aspect: str = "image"     # mosaic shape: "image" (same as the main picture) or W:H
+    mosaic_ratio: float = 0.0        # set by the solver: final mosaic width/height
     cell_px: int = 48                # pixels per base cell in the still mosaic
     gap_px: int = 0                  # border/gap around each tile
     gap_color: tuple = (0, 0, 0)
@@ -60,7 +62,7 @@ class Settings:
     image_quality: int = 95          # jpg / webp quality 1..100
 
     # ---- video --------------------------------------------------------
-    video_aspect: str = "9:16"       # "W:H", e.g. 9:16, 16:9, 1:1, 4:5
+    video_aspect: str = "same"       # "same" (as the mosaic) or "W:H", e.g. 9:16, 16:9, 1:1, 4:5
     video_res: int = 1080            # short side in pixels (1080 -> "1080p")
     fps: int = 30
     duration: float = 20.0           # seconds
@@ -75,7 +77,6 @@ class Settings:
     pulses: int = 4                  # arrival comes in this many waves (calm beats between)
     pulse_depth: float = 0.55        # 0 = constant stream, ~1 = strong waves
     dof: float = 0.7                 # defocus of tiles away from the focal plane (0 = off)
-    grid_follows_video: bool = True  # mosaic grid takes the video's aspect ratio
     frame_margin: float = 0.80       # final mosaic fills this fraction of the frame
 
     # ---- finale (calm & elegant) ---------------------------------------
@@ -83,8 +84,16 @@ class Settings:
     glow: float = 0.6                # soft shadow / glow / rim around the mosaic (0 = off)
     particles: int = 220            # drifting dust/bokeh (0 = off)
 
+    def tile_ratio(self) -> float:
+        a, b = (float(v) for v in self.tile_aspect.split(":"))
+        return a / b
+
     def video_dims(self) -> tuple[int, int]:
-        a, b = (float(v) for v in self.video_aspect.split(":"))
+        if self.video_aspect == "same":
+            r = self.mosaic_ratio or 9 / 16
+            a, b = r, 1.0
+        else:
+            a, b = (float(v) for v in self.video_aspect.split(":"))
         if a <= b:
             w, h = self.video_res, self.video_res * b / a
         else:
@@ -109,8 +118,13 @@ class Settings:
         return cls(**data)
 
     def validate(self) -> None:
-        if self.tile_shape != "square":
-            raise ValueError("Only tile_shape='square' is implemented so far")
+        try:
+            if not 0.25 <= self.tile_ratio() <= 4:
+                raise ValueError
+            if self.mosaic_aspect != "image":
+                float(self.mosaic_aspect.split(":")[0]); float(self.mosaic_aspect.split(":")[1])
+        except Exception:
+            raise ValueError("tile_aspect / mosaic_aspect must look like 4:3 (tiles between 1:4 and 4:1)")
         if self.num_tiles < 4:
             raise ValueError("num_tiles must be >= 4")
         if self.image_format not in IMAGE_FORMATS:

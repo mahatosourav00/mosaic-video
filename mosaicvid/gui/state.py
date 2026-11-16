@@ -9,6 +9,9 @@ from PySide6.QtCore import QSettings
 from ..settings import Settings
 
 ASPECTS = {"9:16": "Story  9:16", "4:5": "Portrait  4:5", "1:1": "Square  1:1", "16:9": "Wide  16:9"}
+MOSAIC_SHAPES = {"image": "Same as picture", **ASPECTS}
+VIDEO_SHAPES = {"same": "Same as mosaic", **ASPECTS}
+TILE_SHAPES = {"1:1": "Square", "4:3": "Wide 4:3", "3:2": "Wide 3:2", "3:4": "Tall 3:4", "2:3": "Tall 2:3"}
 STYLES = {
     "swarm": ("Swarm", "Tiles swoop in from all sides while the camera sweeps across the picture."),
     "vortex": ("Vortex", "The camera circles the subject as tiles spiral in from a swirl."),
@@ -42,6 +45,7 @@ class AppState:
     quality: str = "standard"             # draft | standard | high   (video)
     preset: str = "balanced"
     aspect_touched: bool = False
+    image_ratio: float = 0.0              # width/height of the main picture (0 = unknown)
     print_on: bool = False                # image only: size for print instead of screen
     print_w: float = 24.0                 # width in `print_unit`
     print_unit: str = "in"                # in | cm
@@ -102,9 +106,14 @@ class AppState:
 
     def print_pixels(self) -> tuple[int, int]:
         """Requested image size in pixels (width, height) from the physical size, unit, DPI and shape."""
-        a, b = (float(v) for v in self.settings.video_aspect.split(":"))
+        s = self.settings
+        if s.mosaic_aspect == "image":
+            r = self.image_ratio or 1.0
+        else:
+            a, b = (float(v) for v in s.mosaic_aspect.split(":"))
+            r = a / b
         w_in = self.print_w / (2.54 if self.print_unit == "cm" else 1.0)
-        return int(round(w_in * self.print_dpi)), int(round(w_in * self.print_dpi * b / a))
+        return int(round(w_in * self.print_dpi)), int(round(w_in * self.print_dpi / r))
 
     def default_out_dir(self) -> str:
         base = Path.home() / "Documents" / "Mosaic Studio"

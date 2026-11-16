@@ -3,7 +3,7 @@ from __future__ import annotations
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QColorDialog, QDoubleSpinBox, QHBoxLayout, QPushButton, QSpinBox, QVBoxLayout, QWidget
 
-from ..state import ASPECTS, PRESETS
+from ..state import MOSAIC_SHAPES, PRESETS, TILE_SHAPES
 from ..widgets import Banner, OptionRow, Segmented, SliderField, Toggle, card, hline, label
 from .base import Collapsible, Page
 
@@ -47,10 +47,15 @@ class LookPage(Page):
         self.preset_lb = label(PRESET_TEXT[state.preset], "muted", wrap=True)
         lay.addWidget(self.preset_lb)
         lay.addWidget(hline())
-        self.shape = Segmented([(k, v) for k, v in ASPECTS.items()], s.video_aspect)
+        self.shape = Segmented([(k, v) for k, v in MOSAIC_SHAPES.items()], s.mosaic_aspect)
         self.shape.changed.connect(self._shape)
-        self.shape_row = OptionRow("Shape", "shape", self.shape, "Match where you will show it.")
+        self.shape_row = OptionRow("Mosaic shape", "shape", self.shape, "Match where you will show it.")
         lay.addWidget(self.shape_row)
+        lay.addWidget(hline())
+        self.tile_shape = Segmented([(k, v) for k, v in TILE_SHAPES.items()], s.tile_aspect)
+        self.tile_shape.changed.connect(lambda k: setattr(s, "tile_aspect", k))
+        lay.addWidget(OptionRow("Tile shape", "tile_shape", self.tile_shape,
+                                "The shape of each photo in the mosaic."))
 
         # ---------------------------------------------------------------- main controls
         f2, lay2 = self.section("Look and feel")
@@ -179,9 +184,10 @@ class LookPage(Page):
         st = self.state
         s = st.settings
         self.img_card.setVisible(st.makes_image)
-        self.shape.set_value(s.video_aspect)
+        self.shape.set_value(s.mosaic_aspect)
+        self.tile_shape.set_value(s.tile_aspect)
         self.shape_row.set_desc("Shape of your " + ("mosaic image." if st.goal == "image" else
-                                                    "mosaic and video. It is fixed once the mosaic is built."))
+                                                    "mosaic. It is fixed once the mosaic is built."))
         self._advice()
         self._print_changed()
 
@@ -199,7 +205,8 @@ class LookPage(Page):
         st, s = self.state, self.state.settings
         self.preset.set_value(st.preset)
         self.preset_lb.setText(PRESET_TEXT.get(st.preset, ""))
-        self.shape.set_value(s.video_aspect)
+        self.shape.set_value(s.mosaic_aspect)
+        self.tile_shape.set_value(s.tile_aspect)
         self.detail.set_value(s.num_tiles, emit=False)
         self.repeats.set_value(s.max_uses, emit=False)
         self.colour.set_value(s.tint, emit=False)
@@ -250,8 +257,7 @@ class LookPage(Page):
         w, h = st.print_pixels()
         mp = w * h / 1e6
         unit = "in" if st.print_unit == "in" else "cm"
-        a, b = (float(v) for v in st.settings.video_aspect.split(":"))
-        txt = f"About {st.print_w:g} x {st.print_w * b / a:.1f} {unit}  ·  {w:,} x {h:,} pixels  ·  {mp:.0f} megapixels"
+        txt = f"About {st.print_w:g} x {st.print_w * h / max(w, 1):.1f} {unit}  ·  {w:,} x {h:,} pixels  ·  {mp:.0f} megapixels"
         if mp > 400:
             self.print_info.set_text(txt + ". That is more than the 400 MP limit, so it will be made a little smaller.",
                                      "warn")
@@ -283,8 +289,8 @@ class LookPage(Page):
         self.quality_row.setVisible(key in ("jpg", "webp"))
 
     def _shape(self, key: str):
-        self.state.settings.video_aspect = key
-        self.state.aspect_touched = True
+        self.state.settings.mosaic_aspect = key
+        self._print_changed()
 
     def _detail(self, v: float):
         self.state.settings.num_tiles = int(v)

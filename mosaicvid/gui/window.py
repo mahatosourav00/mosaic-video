@@ -197,7 +197,9 @@ class MainWindow(QMainWindow):
     def _make_another(self, scene: str):
         st = self.state
         st.goal, st.use_existing, st.scene = "video", True, scene
-        st.quality = "draft"
+        st.quality = "standard"
+        if hasattr(self.pages.get("video"), "sync"):
+            self.pages["video"].sync()
         self.create.reset()
         self.pages["photos"].scene.set_path(scene, emit=False)
         self._go(1)

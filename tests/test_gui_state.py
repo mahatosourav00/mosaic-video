@@ -65,7 +65,7 @@ def test_preset_round_trip_keeps_private_folders_out_and_updates_in_place():
 
 def test_print_pixels_follow_size_unit_dpi_and_shape():
     s = AppState(goal="image", print_on=True, print_w=24.0, print_dpi=300)
-    s.settings.video_aspect = "4:5"
+    s.settings.mosaic_aspect = "4:5"
     assert s.print_pixels() == (7200, 9000)
     s.print_unit, s.print_w = "cm", 30.48                            # = 12 inches
     assert s.print_pixels() == (3600, 4500)

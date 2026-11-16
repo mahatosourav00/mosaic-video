@@ -7,7 +7,7 @@ from PySide6.QtCore import QPointF, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QVBoxLayout, QWidget
 
-from ..state import ASPECTS, STYLES
+from ..state import STYLES, VIDEO_SHAPES
 from ..theme import C
 from ..widgets import Banner, OptionRow, Segmented, SliderField, Toggle, hline, label
 from .base import Collapsible, Page
@@ -152,8 +152,11 @@ class VideoPage(Page):
                              s.video_format)
         self.fmt.changed.connect(lambda k: setattr(s, "video_format", k))
         lay2.addWidget(OptionRow("File type", "format", self.fmt))
-        self.shape_note = label("", "muted", wrap=True)
-        lay2.addWidget(self.shape_note)
+        lay2.addWidget(hline())
+        self.vshape = Segmented([(k, v) for k, v in VIDEO_SHAPES.items()], s.video_aspect)
+        self.vshape.changed.connect(lambda k: setattr(s, "video_aspect", k))
+        lay2.addWidget(OptionRow("Video shape", "video_shape", self.vshape,
+                                 "By default the video has the same shape as your mosaic."))
 
         # ---------------------------------------------------------------- advanced
         adv = Collapsible("Advanced options")
@@ -188,6 +191,7 @@ class VideoPage(Page):
         self.quality.set_value(st.quality)
         self.res.set_value(str(s.video_res))
         self.fmt.set_value(s.video_format)
+        self.vshape.set_value(s.video_aspect)
         self.fps.set_value(str(s.fps))
         for f, sl in self.adv_sliders.items():
             sl.set_value(getattr(s, f), emit=False)
@@ -199,11 +203,7 @@ class VideoPage(Page):
     def on_enter(self):
         st = self.state
         self.fmt.setEnabled(True)
-        if st.use_existing:
-            self.shape_note.setText("This video uses the shape of your saved mosaic. It cannot be changed here.")
-        else:
-            self.shape_note.setText(f"Video shape: {ASPECTS.get(st.settings.video_aspect, st.settings.video_aspect)} "
-                                    "(chosen in the previous step).")
+        pass
 
     def _style(self, key: str):
         self.state.settings.style = key

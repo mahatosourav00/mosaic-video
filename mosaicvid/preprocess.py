@@ -22,7 +22,7 @@ WORK_SIDE = 1600
 @dataclass
 class Tile:
     path: str
-    image: np.ndarray       # (cache_px, cache_px, 3) uint8 RGB
+    image: np.ndarray       # (cache_px, cache_px*ratio, 3) uint8 RGB
     sharpness: float
 
 
@@ -176,17 +176,25 @@ def detect_rotation(arr: np.ndarray) -> int:
     return best if scores[best] > 0 and all(s == 0 for s in others) else 0
 
 
-def centre_square_crop(arr: np.ndarray) -> np.ndarray:
-    h, w, _ = arr.shape
-    side = min(h, w)
-    y, x = (h - side) // 2, (w - side) // 2
-    return arr[y:y + side, x:x + side]
+def _window(h: int, w: int, ratio: float) -> tuple[int, int]:
+    """Largest (crop_h, crop_w) with w/h == ratio that fits in h x w."""
+    if w / h > ratio:
+        return h, max(1, int(round(h * ratio)))
+    return max(1, int(round(w / ratio))), w
 
 
-def smart_square_crop(arr: np.ndarray) -> np.ndarray:
-    """Crop to a square keeping the most salient area (edges + faces)."""
+def centre_square_crop(arr: np.ndarray, ratio: float = 1.0) -> np.ndarray:
     h, w, _ = arr.shape
-    if h == w:
+    ch, cw = _window(h, w, ratio)
+    y, x = (h - ch) // 2, (w - cw) // 2
+    return arr[y:y + ch, x:x + cw]
+
+
+def smart_square_crop(arr: np.ndarray, ratio: float = 1.0) -> np.ndarray:
+    """Crop to w/h == ratio keeping the most salient area (edges + faces)."""
+    h, w, _ = arr.shape
+    ch, cw = _window(h, w, ratio)
+    if (ch, cw) == (h, w):
         return arr
     scale = 256.0 / max(h, w)
     small = cv2.resize(arr, (max(1, int(w * scale)), max(1, int(h * scale))), interpolation=cv2.INTER_AREA)
@@ -201,26 +209,21 @@ def smart_square_crop(arr: np.ndarray) -> np.ndarray:
         except Exception:
             pass
     sh, sw = gray.shape
-    side = min(sh, sw)
-    if sw > sh:
-        prof = sal.sum(axis=0)
-        n = sw
-    else:
-        prof = sal.sum(axis=1)
-        n = sh
+    sch, scw = _window(sh, sw, ratio)
+    if cw < w:                      # slide horizontally
+        prof, n, side, full_side, total = sal.sum(axis=0), sw, scw, cw, w
+    else:                           # slide vertically
+        prof, n, side, full_side, total = sal.sum(axis=1), sh, sch, ch, h
     csum = np.concatenate([[0], np.cumsum(prof)])
-    starts = np.arange(0, n - side + 1)
+    starts = np.arange(0, max(n - side, 0) + 1)
     scores = csum[starts + side] - csum[starts]
     centre = (n - side) / 2.0
     bias = 1.0 - 0.15 * np.abs(starts - centre) / max(centre, 1.0)
     best = int(starts[np.argmax(scores * bias)])
-    start = int(round(best / scale))
-    full_side = min(h, w)
-    if w > h:
-        start = min(start, w - full_side)
-        return arr[:, start:start + full_side]
-    start = min(start, h - full_side)
-    return arr[start:start + full_side]
+    start = min(int(round(best / scale)), total - full_side)
+    if cw < w:
+        return arr[:, start:start + cw]
+    return arr[start:start + ch]
 
 
 # ------------------------------------------------------------- pipeline
@@ -248,6 +251,8 @@ def _key(path: Path, s: Settings) -> str:
         raw += "|centrecrop"          # only added when off, so existing caches stay valid
     if s.grayscale:
         raw += "|gray"
+    if s.tile_aspect != "1:1":
+        raw += f"|tile{s.tile_aspect}"
     return hashlib.sha1(raw.encode()).hexdigest()[:20]
 
 
@@ -305,8 +310,9 @@ def _process_ex(path: Path, s: Settings, cache: Path | None) -> tuple[Tile | Non
                 (cache / f"{key}.rej").touch()
                 save_meta()
             return None, rec
-        sq = smart_square_crop(arr) if s.smart_crop else centre_square_crop(arr)
-        out = np.asarray(Image.fromarray(sq).resize((s.cache_px, s.cache_px), Image.LANCZOS))
+        tr = s.tile_ratio()
+        sq = smart_square_crop(arr, tr) if s.smart_crop else centre_square_crop(arr, tr)
+        out = np.asarray(Image.fromarray(sq).resize((max(1, int(round(s.cache_px * tr))), s.cache_px), Image.LANCZOS))
         if s.grayscale:
             out = to_gray3(out)
     except Exception as e:

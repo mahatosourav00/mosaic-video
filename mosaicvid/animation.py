@@ -57,7 +57,7 @@ def _rgb_offsets(mosaic, tiles) -> np.ndarray:
 
 def _world(mosaic):
     """Cell centres in world units (1 unit = 1 base cell, mosaic centred, y up)."""
-    x = np.array([c.cx for c in mosaic.cells]) - mosaic.cols / 2
+    x = (np.array([c.cx for c in mosaic.cells]) - mosaic.cols / 2) * mosaic.ratio
     y = mosaic.rows / 2 - np.array([c.cy for c in mosaic.cells])
     size = np.array([c.size for c in mosaic.cells])
     return x, y, size
@@ -80,7 +80,7 @@ def orbit_camera(mosaic, cen, d_full: float, D: float, seed: int):
     """Multi-phase move: tight orbit on the subject -> crane/sweep across the picture ->
     spiral pull-back -> settle on the full frame with a gentle push. Returns (camera, state)."""
     rng = np.random.default_rng(seed + 101)
-    cols, rows = mosaic.cols, mosaic.rows
+    cols, rows = mosaic.world_w, mosaic.rows
     cx, cy = cen
     lim_x, lim_y = cols * 0.42, rows * 0.42
     clip = lambda x, y: (float(np.clip(x, -lim_x, lim_x)), float(np.clip(y, -lim_y, lim_y)))
@@ -174,7 +174,7 @@ def _place_heroes(s, rng, camera, aspect, n_tiles, flight, size, cell_tile, t0, 
         side = rng.choice([-1, 1])
         S[ci] = Hp + r * side * visw * 1.1 + u * rng.uniform(-.6, .6) * vish - f * dh * 0.25
         C[ci] = 2 * Hp - 0.5 * (S[ci] + E[ci])
-        kmul[ci] = s.hero_size * size_scale * visw / size[ci]
+        kmul[ci] = s.hero_size * size_scale * visw / (size[ci] * s.tile_ratio())
         shrink[ci] = 0.66
         ease[ci] = 1.0 + n_sel          # >=1 marks a showcase tile; value-1 = its hi-res texture layer
         n_sel += 1
@@ -188,7 +188,7 @@ def swarm(mosaic, tiles, s) -> Plan:
     D = s.duration
     W, H = s.video_dims()
     aspect = W / H
-    d_full = full_distance(mosaic.cols, mosaic.rows, aspect, 1.0 / max(s.frame_margin, 0.3))
+    d_full = full_distance(mosaic.world_w, mosaic.rows, aspect, 1.0 / max(s.frame_margin, 0.3))
 
     wx, wy, size = _world(mosaic)
     N = len(wx)
@@ -312,7 +312,7 @@ def _path_camera(mosaic, D: float, seed: int, kt, tx, ty, dist, yaw, pitch, roll
     Pacing comes from the key spacing: linger -> fast sweeps -> quick pull-back reveal -> slow calm hold."""
     rng = np.random.default_rng(seed + 202)
     ph = rng.uniform(0, 6.28, 6)
-    lim_x, lim_y = mosaic.cols * 0.44, mosaic.rows * 0.44
+    lim_x, lim_y = mosaic.world_w * 0.44, mosaic.rows * 0.44
     kt = np.asarray(kt, float) * D
     rows_k = [np.clip(tx, -lim_x, lim_x), np.clip(ty, -lim_y, lim_y), dist, yaw, pitch, roll]
     spl = [PchipInterpolator(kt, np.array(r, float)) for r in rows_k]
@@ -328,7 +328,7 @@ def _path_camera(mosaic, D: float, seed: int, kt, tx, ty, dist, yaw, pitch, roll
         u = _smooth(0.66 * D, D, tt)                     # living finale
         dd *= 1.0 - 0.05 * u
         ya += arc * 0.05 * math.sin(math.pi * u)
-        x += arc * 0.012 * mosaic.cols * math.sin(math.pi * u)
+        x += arc * 0.012 * mosaic.world_w * math.sin(math.pi * u)
         return x, y, dd, ya, pi_, ro
 
     def fov(t: float) -> float:
@@ -346,7 +346,7 @@ def _path_camera(mosaic, D: float, seed: int, kt, tx, ty, dist, yaw, pitch, roll
 def _vortex_camera(mosaic, cen, d_full: float, D: float, seed: int):
     """Helix around the subject: big yaw swings, crane, dolly surges, then a quick pull-back as the face resolves."""
     th0 = np.random.default_rng(seed + 202).uniform(0, 6.28)
-    m = min(mosaic.cols, mosaic.rows)
+    m = min(mosaic.world_w, mosaic.rows)
     kt = [0.0, .08, .20, .30, .38, .48, .60, .72, .90]
     # ONE continuous circling move, in the same sense the tiles swirl (clockwise): ~2 full laps of the subject.
     ang = th0 - 2 * math.pi * np.array([0.0, .20, .60, 1.00, 1.40, 1.70, 1.90, 2.0, 2.0])
@@ -364,7 +364,7 @@ def _vortex_camera(mosaic, cen, d_full: float, D: float, seed: int):
 def _basics(mosaic, s):
     rng = np.random.default_rng(s.anim_seed)
     W, H = s.video_dims()
-    d_full = full_distance(mosaic.cols, mosaic.rows, W / H, 1.0 / max(s.frame_margin, 0.3))
+    d_full = full_distance(mosaic.world_w, mosaic.rows, W / H, 1.0 / max(s.frame_margin, 0.3))
     wx, wy, _ = _world(mosaic)
     E = np.stack([wx, wy, np.zeros(len(wx))], 1)
     return rng, d_full, wx, wy, E, _subject_centroid(mosaic, wx, wy)
@@ -412,7 +412,7 @@ def wave(mosaic, tiles, s) -> Plan:
     rng, d_full, wx, wy, E, cen = _basics(mosaic, s)
     N = len(wx)
     D = s.duration
-    cols, rows = mosaic.cols, mosaic.rows
+    cols, rows = mosaic.world_w, mosaic.rows
     xn = (wx - wx.min()) / max(np.ptp(wx), 1e-6)
     yn = (wy - wy.min()) / max(np.ptp(wy), 1e-6)
     key = xn + 0.18 * np.sin(2.4 * math.pi * yn) + rng.normal(0, 0.03, N)
@@ -444,12 +444,12 @@ def zoom(mosaic, tiles, s) -> Plan:
     rng, d_full, wx, wy, E, cen = _basics(mosaic, s)
     N = len(wx)
     D = s.duration
-    m = min(mosaic.cols, mosaic.rows)
+    m = min(mosaic.world_w, mosaic.rows)
     r = np.hypot(wx - cen[0], wy - cen[1])
     key = r / max(r.max(), 1e-6) + rng.normal(0, 0.06, N)
-    S = E + np.stack([rng.normal(0, 0.05, N) * mosaic.cols, rng.normal(0, 0.05, N) * mosaic.rows,
+    S = E + np.stack([rng.normal(0, 0.05, N) * mosaic.world_w, rng.normal(0, 0.05, N) * mosaic.rows,
                       d_full * rng.uniform(0.08, 0.24, N)], 1)                    # start just in front of the lens
-    C = 0.5 * (S + E) + np.stack([rng.normal(0, 0.06, N) * mosaic.cols, rng.normal(0, 0.06, N) * mosaic.rows,
+    C = 0.5 * (S + E) + np.stack([rng.normal(0, 0.06, N) * mosaic.world_w, rng.normal(0, 0.06, N) * mosaic.rows,
                                   d_full * rng.uniform(0.0, 0.15, N)], 1)
     # A pure LENS-AXIS move: dead centred, no yaw / pitch / roll, no drift. It starts macro-close with a long
     # telephoto lens and accelerates straight back while the lens widens, so it reads as one big zoom.

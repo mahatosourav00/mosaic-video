@@ -18,10 +18,15 @@ HELP: dict[str, tuple[str, str, str]] = {
     "existing": ("Use a mosaic I already built",
                  "Skip building the mosaic and make a new video from one you created before (a scene.json file). "
                  "It is quick, so it is perfect for trying different animation styles.", ""),
-    "shape": ("Shape",
-              "The proportions of your mosaic and video. It is chosen before the mosaic is built, so the photos fill "
-              "the frame exactly. Story (9:16) suits phones; Square suits feeds; Wide suits TVs and YouTube.",
-              "Story for Instagram / Reels / Shorts."),
+    "shape": ("Mosaic shape",
+              "The proportions of the mosaic. 'Same as picture' keeps your main picture's own shape; the others crop "
+              "it (around the face) to fit. It is chosen before the mosaic is built.", "Same as picture"),
+    "tile_shape": ("Tile shape",
+                   "The shape of each small photo. Square is classic; wide or tall tiles keep more of landscape or "
+                   "portrait photos. Photos are cropped to fit.", "Square"),
+    "video_shape": ("Video shape",
+                    "The proportions of the video. By default it matches your mosaic. Choose Story for phones, Wide "
+                    "for TVs and YouTube; the mosaic is fitted inside with the backdrop around it.", "Same as mosaic"),
     # ---- prepare
     "prep_skip": ("Skip all preparation",
                   "Use your photos exactly as they are, with no cleaning. Every photo is still cropped to a square. "

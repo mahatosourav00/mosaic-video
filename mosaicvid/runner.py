@@ -40,7 +40,7 @@ Emit = Callable[[dict], None]
 # Settings an existing mosaic (scene.json) can still change when only a video is made from it.
 # Grid shape (num_tiles, aspect, sub-tiles, ...) is fixed once the mosaic is built.
 VIDEO_ONLY_KEYS = (
-    "video_res", "fps", "duration", "video_format", "crf", "style", "bg_color", "anim_seed", "hero_tiles",
+    "video_aspect", "video_res", "fps", "duration", "video_format", "crf", "style", "bg_color", "anim_seed", "hero_tiles",
     "hero_size", "flight_scale", "pulses", "pulse_depth", "dof", "frame_margin", "backdrop", "glow", "particles",
 )
 
@@ -178,8 +178,8 @@ def run_job(job: dict, emit: Emit) -> int:
         stats = dict(m.stats)
 
         if s.print_width_px:
-            cell = int(min(512, max(16, math.ceil(s.print_width_px / m.cols))))
-            while (m.cols * cell) * (m.rows * cell) > MAX_STILL_PIXELS and cell > 16:
+            cell = int(min(512, max(16, math.ceil(s.print_width_px / m.world_w))))     # tile height
+            while (m.world_w * cell) * (m.rows * cell) > MAX_STILL_PIXELS and cell > 16:
                 cell -= 1
             if cell != s.cell_px:
                 emit({"event": "info", "message": f"Sizing the image for print: {cell}px per tile"})

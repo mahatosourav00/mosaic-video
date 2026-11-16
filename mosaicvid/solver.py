@@ -47,6 +47,12 @@ class Mosaic:
     stats: dict
     subject: np.ndarray | None = None   # subject map at analysis resolution
     main_path: str = ""
+    ratio: float = 1.0          # tile width / height
+
+    @property
+    def world_w(self) -> float:
+        """Mosaic width in world units (1 unit = one tile height)."""
+        return self.cols * self.ratio
 
 
 # ------------------------------------------------------------------ layout
@@ -227,14 +233,16 @@ def solve(tiles: list[Tile], main_path: str | Path, s: Settings) -> Mosaic:
         from .preprocess import to_gray3
         main = to_gray3(main)
     h, w, _ = main.shape
-    if s.grid_follows_video:            # grid takes the video's shape; crop around the subject
-        vw, vh = s.video_dims()
-        cols, rows = grid_dims(vw, vh, s.num_tiles)
-        focus = subject_centroid(subject_map(main, s.detect_faces))
-        main = crop_to_ratio(main, cols / rows, focus)
+    r = s.tile_ratio()
+    if s.mosaic_aspect == "image":
+        target = w / h
     else:
-        cols, rows = grid_dims(w, h, s.num_tiles)
-        main = crop_to_ratio(main, cols / rows)
+        x, y = (float(v) for v in s.mosaic_aspect.split(":"))
+        target = x / y
+    cols, rows = grid_dims(target / r, 1.0, s.num_tiles)       # cols*r/rows ~ target
+    focus = subject_centroid(subject_map(main, s.detect_faces))
+    main = crop_to_ratio(main, cols * r / rows, focus)
+    s.mosaic_ratio = cols * r / rows
     ana = cv2.resize(main, (cols * ANALYSIS_PX, rows * ANALYSIS_PX), interpolation=cv2.INTER_AREA)
     ana_lab = _lab(ana)
 
@@ -258,7 +266,7 @@ def solve(tiles: list[Tile], main_path: str | Path, s: Settings) -> Mosaic:
         t_eff = s.tint + (1 - s.tint) * 0.6 * s.subject_weight * c.w
         c.shift = tuple(float(v) for v in (tm - tile_mean[c.tile]) * t_eff)
     stats.update(cols=cols, rows=rows, cells=len(cells), tiles=len(tiles))
-    return Mosaic(cols, rows, cells, [t.path for t in tiles], main, stats, subject, str(main_path))
+    return Mosaic(cols, rows, cells, [t.path for t in tiles], main, stats, subject, str(main_path), r)
 
 
 # ----------------------------------------------------------------- render
@@ -270,13 +278,14 @@ def tinted_tile(img: np.ndarray, shift) -> np.ndarray:
 
 
 def render_still(m: Mosaic, tiles: list[Tile], s: Settings) -> np.ndarray:
-    P = s.cell_px
-    W, H = m.cols * P, m.rows * P
+    P = s.cell_px                       # tile height in pixels
+    PW = max(1, int(round(P * m.ratio)))
+    W, H = m.cols * PW, m.rows * P
     canvas = np.empty((H, W, 3), np.uint8)
     canvas[:] = np.array(s.gap_color, np.uint8)
     for c in m.cells:
-        x0, y0 = int(round(c.x * P)), int(round(c.y * P))
-        x1, y1 = int(round((c.x + c.size) * P)), int(round((c.y + c.size) * P))
+        x0, y0 = int(round(c.x * PW)), int(round(c.y * P))
+        x1, y1 = int(round((c.x + c.size) * PW)), int(round((c.y + c.size) * P))
         g = s.gap_px if c.size >= 1 else s.gap_px // 2
         x0 += g; y0 += g; x1 -= g; y1 -= g
         if x1 <= x0 or y1 <= y0:
@@ -327,10 +336,10 @@ def load_scene(path: str | Path, cache_dir: str | Path | None = None):
     if crop.exists():
         main = load_rgb(crop, max_side=None)
     else:
-        main = crop_to_ratio(load_rgb(data["main"], max_side=3000), data["cols"] / data["rows"])
+        main = crop_to_ratio(load_rgb(data["main"], max_side=3000), data["cols"] * s.tile_ratio() / data["rows"])
     subject = None
     if s.subject_weight > 0:
         subject = cv2.resize(subject_map(main, s.detect_faces),
                              (data["cols"] * ANALYSIS_PX, data["rows"] * ANALYSIS_PX))
     return Mosaic(data["cols"], data["rows"], cells, data["tiles"], main, data["stats"], subject,
-                  data["main"]), tiles, s
+                  data["main"], s.tile_ratio()), tiles, s

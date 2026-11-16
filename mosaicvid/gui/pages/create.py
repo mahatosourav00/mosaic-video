@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel, QPlainT
 
 from ..coffee import Signature
 from ..jobs import JobRunner
-from ..state import ASPECTS, STYLES, save_prefs
+from ..state import MOSAIC_SHAPES, STYLES, TILE_SHAPES, VIDEO_SHAPES, save_prefs
 from ..theme import C
 from ..widgets import Banner, OptionRow, PathPicker, card, clear_layout, hline, label
 from .base import Page
@@ -184,7 +184,7 @@ class CreatePage(Page):
             extra = f" + {len(s.extra_tile_dirs)} more folder(s)" if s.extra_tile_dirs else ""
             rows += [("Photos", f"{st.n_photos:,} in “{Path(st.tiles_dir).name}”{extra}"),
                      ("Main picture", Path(st.main_image).name),
-                     ("Shape", ASPECTS.get(s.video_aspect, s.video_aspect)),
+                     ("Shape", MOSAIC_SHAPES.get(s.mosaic_aspect, s.mosaic_aspect) + " · tiles: " + TILE_SHAPES.get(s.tile_aspect, s.tile_aspect)),
                      ("Detail", f"about {s.num_tiles:,} tiles"),
                      ("Preparation", "Skipped" if st.skip_prep else
                       ", ".join(n for n, on in (("trim borders", s.trim_borders), ("remove duplicates", s.dedupe),
@@ -193,6 +193,7 @@ class CreatePage(Page):
         if st.makes_video:
             q = {"draft": "Draft preview (fast, low resolution)", "standard": "Standard", "high": "High"}[st.quality]
             res = "" if st.quality == "draft" else f" · {s.video_res}p"
+            rows += [("Video shape", VIDEO_SHAPES.get(s.video_aspect, s.video_aspect))]
             rows += [("Video", f"{STYLES[s.style][0]} · {int(s.duration)} s · {q}{res} · {s.video_format.upper()}")]
         if s.grayscale:
             rows += [("Colour", "Black and white")]

@@ -23,7 +23,7 @@ TILE_VS = """
 in vec2 in_vert;
 in vec4 i_end; in vec4 i_start; in vec4 i_time; in vec3 i_off; in vec3 i_ext; in vec3 i_mid;
 uniform mat4 u_vp; uniform float u_time; uniform float u_gap;
-uniform vec3 u_eye; uniform vec3 u_fwd; uniform float u_focus; uniform float u_dof;
+uniform float u_ratio; uniform vec3 u_eye; uniform vec3 u_fwd; uniform float u_focus; uniform float u_dof;
 out vec3 v_uv; out vec3 v_off; out float v_alpha; out float v_light; out float v_blur; out float v_fog;
 flat out float v_hero;
 void main() {
@@ -44,7 +44,7 @@ void main() {
     float tilt = i_time.w * (1.0 - e);
     float sc = mix(i_ext.x, 1.0, smoothstep(i_ext.y, 1.0, p));
     float side = max(i_end.z - u_gap * (i_end.z >= 0.99 ? 1.0 : 0.5), 0.02);
-    vec3 l = vec3(in_vert * side * sc, 0.0);
+    vec3 l = vec3(in_vert * vec2(u_ratio, 1.0) * side * sc, 0.0);
     float ct = cos(tilt), st = sin(tilt);
     l = vec3(ct * l.x + st * l.z, l.y, -st * l.x + ct * l.z);
     float ca = cos(ang), sa = sin(ang);
@@ -296,10 +296,13 @@ def render_video(m: Mosaic, tiles, s: Settings, out_path: str | Path, preview: b
     fbo = ctx.framebuffer([ctx.renderbuffer((W, H), 4)])
 
     # tile texture array (mip-mapped; mips double as the defocus blur)
+    tr = m.ratio
+    ww = m.world_w
     tex_px = 64 if preview else min(256, s.cache_px)
-    layers = np.stack([cv2.resize(t.image, (tex_px, tex_px), interpolation=cv2.INTER_AREA) for t in tiles])
+    tex_w = max(1, int(round(tex_px * tr)))
+    layers = np.stack([cv2.resize(t.image, (tex_w, tex_px), interpolation=cv2.INTER_AREA) for t in tiles])
     rgba = np.concatenate([layers, np.full((*layers.shape[:3], 1), 255, np.uint8)], axis=3)
-    tex = ctx.texture_array((tex_px, tex_px, len(tiles)), 4, np.ascontiguousarray(rgba).tobytes())
+    tex = ctx.texture_array((tex_w, tex_px, len(tiles)), 4, np.ascontiguousarray(rgba).tobytes())
     tex.build_mipmaps()
     tex.filter = (moderngl.LINEAR_MIPMAP_LINEAR, moderngl.LINEAR)
     tex.anisotropy = 8.0
@@ -311,16 +314,17 @@ def render_video(m: Mosaic, tiles, s: Settings, out_path: str | Path, preview: b
     hmask = plan.inst[:, 17] >= 1.0
     n_hero = int(hmask.sum())
     hero_px = 128 if preview else 512
+    hero_w = max(1, int(round(hero_px * tr)))
     if n_hero:
         order_h = np.argsort(plan.inst[hmask, 17])
         hero_ids = plan.inst[hmask, 3][order_h].astype(int)
         s_hi = copy.copy(s); s_hi.cache_px = hero_px
         hi = load_tiles([m.tile_paths[i] for i in hero_ids], s_hi, cache_dir)
-        hlayers = np.stack([cv2.resize(t.image, (hero_px, hero_px), interpolation=cv2.INTER_AREA) for t in hi])
+        hlayers = np.stack([cv2.resize(t.image, (hero_w, hero_px), interpolation=cv2.INTER_AREA) for t in hi])
     else:
-        hlayers = np.zeros((1, hero_px, hero_px, 3), np.uint8)
+        hlayers = np.zeros((1, hero_px, hero_w, 3), np.uint8)
     hrgba = np.concatenate([hlayers, np.full((*hlayers.shape[:3], 1), 255, np.uint8)], axis=3)
-    hero_tex = ctx.texture_array((hero_px, hero_px, len(hlayers)), 4, np.ascontiguousarray(hrgba).tobytes())
+    hero_tex = ctx.texture_array((hero_w, hero_px, len(hlayers)), 4, np.ascontiguousarray(hrgba).tobytes())
     hero_tex.build_mipmaps()
     hero_tex.filter = (moderngl.LINEAR_MIPMAP_LINEAR, moderngl.LINEAR)
     hero_tex.anisotropy = 8.0
@@ -328,7 +332,7 @@ def render_video(m: Mosaic, tiles, s: Settings, out_path: str | Path, preview: b
 
     # main-image overlay texture; alpha channel = blend map
     mw = 1024 if preview else 2048
-    mh = int(round(mw * m.rows / m.cols))
+    mh = int(round(mw * m.rows / ww))
     main = cv2.resize(m.main, (mw, mh), interpolation=cv2.INTER_AREA)
     alpha = (np.clip(blend_alpha(m, s, mw, mh), 0, 1) * 255 + 0.5).astype(np.uint8)
     main_tex = ctx.texture((mw, mh), 4, np.ascontiguousarray(np.concatenate([main, alpha], 2)).tobytes())
@@ -337,8 +341,9 @@ def render_video(m: Mosaic, tiles, s: Settings, out_path: str | Path, preview: b
 
     # blurred backdrop texture
     bw = 96
-    bh = max(8, int(round(bw * m.rows / m.cols)))
-    blur = cv2.GaussianBlur(cv2.resize(m.main, (bw, bh), interpolation=cv2.INTER_AREA), (0, 0), 4)
+    from .solver import crop_to_ratio
+    bh = max(8, int(round(bw * H / W)))
+    blur = cv2.GaussianBlur(cv2.resize(np.ascontiguousarray(crop_to_ratio(m.main, W / H)), (bw, bh), interpolation=cv2.INTER_AREA), (0, 0), 4)
     bf = blur.astype(np.float32) / 255.0                      # lift dark photos to a rich mid-dark tone
     lum = float((bf @ np.array([.299, .587, .114], np.float32)).mean())
     gray = (bf @ np.array([.299, .587, .114], np.float32))[..., None]
@@ -365,7 +370,7 @@ def render_video(m: Mosaic, tiles, s: Settings, out_path: str | Path, preview: b
 
     # particles (dust / bokeh): static random attributes, motion is analytic in the shader
     n_p = 0 if preview and s.particles > 60 else s.particles
-    box = (m.cols * 0.78, m.rows * 0.72)
+    box = (ww * 0.78, m.rows * 0.72)
     vao_part = None
     if n_p > 0:
         prng = np.random.default_rng(s.anim_seed + 5)
@@ -380,7 +385,7 @@ def render_video(m: Mosaic, tiles, s: Settings, out_path: str | Path, preview: b
         vao_part = ctx.vertex_array(part, [(quad, "2f", "in_vert"),
                                            (pbuf, "4f 4f/i", "p_a", "p_b")])
         part["u_box"].value = box
-        part["u_mos"].value = (float(m.cols), float(m.rows))
+        part["u_mos"].value = (float(ww), float(m.rows))
         pc = 0.55 * accent + 0.45 * np.array([1.0, 0.93, 0.82], np.float32)
         part["u_color"].value = tuple(float(v) for v in pc)
 
@@ -389,18 +394,19 @@ def render_video(m: Mosaic, tiles, s: Settings, out_path: str | Path, preview: b
     over["u_main"].value = 1
     back["u_blur"].value = 2
     bgc = tuple(v / 255 for v in s.bg_color)
+    prog["u_ratio"].value = float(tr)
     prog["u_gap"].value = s.gap_px / max(s.cell_px, 1)
     prog["u_dof"].value = s.dof
     prog["u_bgc"].value = bgc
-    over["u_size"].value = (float(m.cols), float(m.rows))
+    over["u_size"].value = (float(ww), float(m.rows))
     back["u_bg"].value = bgc
     back["u_accent"].value = tuple(float(v) for v in accent)
     back["u_accent2"].value = tuple(float(v) for v in _accent2(accent))
     back["u_res"].value = (float(W), float(H))
-    pad = 0.55 * max(m.cols, m.rows)
-    glow["u_quad"].value = (m.cols + pad, m.rows + pad)
-    glow["u_half"].value = (m.cols / 2, m.rows / 2)
-    glow["u_scale"].value = float(m.cols)
+    pad = 0.55 * max(ww, m.rows)
+    glow["u_quad"].value = (ww + pad, m.rows + pad)
+    glow["u_half"].value = (ww / 2, m.rows / 2)
+    glow["u_scale"].value = float(ww)
     glow["u_accent"].value = tuple(float(v) for v in accent)
     glow["u_glow"].value = s.glow
     proj = perspective(FOV_DEG, W / H, 0.5, plan.d_full * 6)
@@ -434,7 +440,7 @@ def render_video(m: Mosaic, tiles, s: Settings, out_path: str | Path, preview: b
                 # 1) backdrop
                 if s.backdrop:
                     back["u_amt"].value = 0.15 + 0.85 * smooth(0.45 * D, 0.90 * D, t)
-                    back["u_shift"].value = (float(target[0]) / m.cols * 0.03, float(target[1]) / m.rows * 0.03)
+                    back["u_shift"].value = (float(target[0]) / ww * 0.03, float(target[1]) / m.rows * 0.03)
                     back["u_time"].value = t
                     back_tex.use(2)
                     ctx.depth_mask = False
