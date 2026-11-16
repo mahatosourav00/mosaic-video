@@ -153,7 +153,8 @@ class LookPage(Page):
         qr.addWidget(label("Quick sizes", "muted"))
         for txt, v in (("Full HD", 1920), ("4K", 3840), ("8K", 7680), ("12K", 12288), ("16K", 15360)):
             b = QPushButton(txt)
-            b.clicked.connect(lambda _=False, v=v: self.px_spin.setValue(v))
+            b.setProperty("px", v)
+            b.clicked.connect(self._quick_size)       # a method, not a lambda over self: that loop crashed on exit
             qr.addWidget(b)
         qr.addStretch(1)
         xb.addLayout(qr)
@@ -322,6 +323,11 @@ class LookPage(Page):
         st.print_on, st.px_on = key == "print", key == "pixels"
         self._show_mode(key)
         self._print_changed()
+
+    def _quick_size(self):
+        v = self.sender().property("px")
+        if v:
+            self.px_spin.setValue(int(v))
 
     def _size_changed(self, *_):
         st = self.state
