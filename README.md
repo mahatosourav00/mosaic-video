@@ -175,4 +175,6 @@ Developed by **Sourav**. If this helped you make something you love, you can sup
 
 ## License
 
-No license has been chosen yet, so by default all rights are reserved. Open an issue if you would like to use the code.
+Mosaic Studio is free and open source under the [MIT License](LICENSE): you may use, change and share it, including
+commercially, as long as the licence text stays with it. The downloadable app bundles other open-source software;
+see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

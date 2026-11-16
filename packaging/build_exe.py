@@ -101,6 +101,8 @@ def main() -> int:
     for m in EXCLUDE:
         args += ["--exclude-module", m]
     pyi.run(args)
+    for name in ("LICENSE", "THIRD_PARTY_NOTICES.md"):            # licence texts travel with the app
+        shutil.copy(ROOT / name, ROOT / "dist" / "MosaicStudio" / name)
     exe = ROOT / "dist" / "MosaicStudio" / "MosaicStudio.exe"
     print("\nBuilt:", exe, "(exists)" if exe.exists() else "(MISSING)")
     if not exe.exists():
