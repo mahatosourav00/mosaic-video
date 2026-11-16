@@ -5,7 +5,7 @@ mosaic assembling itself. Everything runs offline on your own Windows PC, with a
 if you prefer).
 
 <p align="center">
-  <img src="docs/images/home.png" alt="Mosaic Studio home screen" width="80%">
+  <img src="docs/images/home.png" alt="Mosaic Studio home screen, with a plugin installed under 'Made for a purpose'" width="80%">
 </p>
 
 ## See it in action
@@ -52,6 +52,7 @@ OpenGL 3.3 (an integrated GPU is fine).
 |---|---|
 | **Create a mosaic** | The finished high-resolution picture built from your photos (PNG, JPEG, WebP or TIFF, for screens or for print). A switch on the *Design mosaic* page adds an **animation** of it assembling itself, in four styles, as MP4 (H.264 / H.265), WebM or GIF, 720p to 4K. |
 | **New video from a saved mosaic** | Reuse a mosaic you built earlier to try a different animation style or format in seconds, without rebuilding it. |
+| **A plugin** | A ready-made flow for one purpose, such as a birthday film with names, a message and music. Plugins live in their own folders and appear on the home screen under *Made for a purpose*; see [Plugins](#plugins). |
 
 ## The app
 
@@ -69,6 +70,8 @@ Steps that do not apply to your goal are left out.
   **Preview what will change** shows which photos would be kept, trimmed, left out or treated as duplicates.
 - **Preview before you build:** a fast draft that has exactly the arrangement of the final mosaic.
 - **Your photos, your way:** several photo folders, folders to leave out, a sub-folder switch, black and white, gap colour.
+- **Shapes:** the mosaic can follow your picture or be Story 9:16, Portrait 4:5, Square or Wide; tiles can be square, wide or
+  tall; the video can have yet another shape.
 - **Print-ready:** choose a physical size (inches or cm) and 150 / 300 / 600 DPI; the DPI is saved inside the file.
 - **Settings files:** save your settings and load them again later (your folders are never stored in them).
 - **Stays responsive:** the work runs in a separate process, so the window never freezes and **Cancel** really cancels.
@@ -97,6 +100,37 @@ EXIF rotation, border and frame trimming, blur / size filtering, near-duplicate 
 cropping, and an on-disk cache so later runs are fast. An experimental "fix sideways photos" option is available (off by
 default).
 
+## Plugins
+
+A plugin turns Mosaic Studio into a tool for **one specific purpose**, with its own guided steps, without changing the
+app. It is a small folder of its own (usually its own project and repository) that the app links to:
+
+```
+my-plugin/
+    plugin.json    what the window shows: home card, steps, form fields, review summary (the window reads only this)
+    plugin.py      def run(ctx): ...  does the work in the engine process and returns {"video": "path"}
+```
+
+<p align="center">
+  <img src="docs/images/plugin-form.png" alt="A plugin's form, built from its plugin.json" width="80%">
+</p>
+
+- **Add one:** click **Add a plugin…** on the home screen and pick its folder (or, from source,
+  `python -m mosaicvid plugins link "path\to\my-plugin"`; `plugins list` and `plugins unlink` also exist). Plugins are also
+  found in `%APPDATA%\MosaicStudio\plugins`. A broken plugin is skipped, never fatal.
+- **Forms without Qt code:** `plugin.json` lists typed fields (text, multi-line text, number, toggle, choice, colour, file,
+  folder, list). The app builds the pages, validates required fields, shows a review screen and saves the values in the
+  settings files.
+- **The mosaic is handled for you:** a plugin that sets `"needs": "mosaic"` gets the photo and main-picture steps, and the
+  engine prepares the photos and solves the mosaic first (and reuses it when only the plugin's own options changed). `run(ctx)`
+  receives the finished scene, the tile cache, the form values, a progress reporter and the FFmpeg path.
+- **Any animation style:** the four styles expose their camera (`Plan.state`), so a plugin can continue a style's camera move.
+- **Short previews:** a plugin can offer "render only a short slice" on its review screen.
+
+The first plugin is **Birthday video** (a personal film: a name drawn in the night sky, the photos gathering into a mosaic
+portrait in any of the four styles, your message, music, a finale). It lives in its own repository.
+The format is documented at the top of [`mosaicvid/plugins.py`](mosaicvid/plugins.py).
+
 ## Command line
 
 The same engine can be used without the app (from a source checkout, see below).
@@ -115,10 +149,14 @@ python -m mosaicvid inspect --tiles "path\to\photos" --out output\run1
 
 # Run a job file (this is what the app uses; progress is printed as one JSON event per line)
 python -m mosaicvid run --job job.json
+
+# Plugins: link a plugin folder, list the installed ones, unlink
+python -m mosaicvid plugins link "path\to\my-plugin"
+python -m mosaicvid plugins list
 ```
 
 `python -m mosaicvid <command> --help` lists every option. A job file is plain JSON (`mode`: `image`, `video`, `both` or
-`inspect`, plus paths and a `settings` object); see the top of [`mosaicvid/runner.py`](mosaicvid/runner.py).
+`inspect` or `plugin`, plus paths and a `settings` object); see the top of [`mosaicvid/runner.py`](mosaicvid/runner.py).
 
 ## Run from source
 
@@ -126,7 +164,7 @@ python -m mosaicvid run --job job.json
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt
 .venv\Scripts\python.exe -m mosaicvid.gui          # open the app
-.venv\Scripts\python.exe -m pytest -q              # run the tests (18)
+.venv\Scripts\python.exe -m pytest -q              # run the tests (31)
 ```
 
 Python 3.12 on Windows is what it is tested with. FFmpeg comes from the `imageio-ffmpeg` package.
@@ -150,12 +188,13 @@ This produces `dist\MosaicStudio\MosaicStudio.exe` (a self-contained folder; zip
 | `mosaicvid/animation.py` | per-tile flights, cameras and the four animation styles |
 | `mosaicvid/render_gl.py` | headless OpenGL renderer and FFmpeg export |
 | `mosaicvid/settings.py` | every user option in one serialisable object |
-| `mosaicvid/runner.py` | one job entry point (image / video / both / inspect) with JSON progress events |
+| `mosaicvid/runner.py` | one job entry point (image / video / both / inspect / plugin) with JSON progress events |
+| `mosaicvid/plugins.py` | plugin manifest, discovery, linking and the context a plugin's `run()` receives |
 | `mosaicvid/report.py` | contact sheets and CSV report of what preparation did |
-| `mosaicvid/cli.py` | `build`, `inspect`, `video` and `run` commands |
+| `mosaicvid/cli.py` | `build`, `inspect`, `video`, `run` and `plugins` commands |
 | `mosaicvid/app.py` | entry point for the window and the packaged exe |
-| `mosaicvid/gui/` | the PySide6 app: pages, widgets, theme, help text |
-| `packaging/` | icon generator and the PyInstaller build script |
+| `mosaicvid/gui/` | the PySide6 app: pages, widgets, theme, help text, plugin forms (`plugin_form.py`) |
+| `packaging/` | icon generator, the PyInstaller build script and `make_screenshots.py` (regenerates `docs/images`) |
 | `tests/` | automated tests |
 
 Generated media (videos, stills, caches) and build output stay out of git on purpose; see `.gitignore`.
@@ -164,7 +203,8 @@ Generated media (videos, stills, caches) and build output stay out of git on pur
 
 - Mixed tile shapes, irregular mosaic shapes from a mask, and using frames from your own videos as tiles
 - Reliable automatic rotation of sideways photos (needs an orientation model)
-- Music and title overlays for videos
+- Music and title overlays for videos (plugins can already do this; a built-in option is still open)
+- Plugins that add their own animation styles or renderer passes; a plugin gallery
 - In-app video playback, a Windows installer and code signing
 - Scale tests (thousands of photos) and renderer tests
 

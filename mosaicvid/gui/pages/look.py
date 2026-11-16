@@ -250,8 +250,8 @@ class LookPage(Page):
         self.blend_row.setVisible(st.makes_image)
         self.shape.set_value(s.mosaic_aspect)
         self.tile_shape.set_value(s.tile_aspect)
-        self.shape_row.set_desc("Shape of your " + ("mosaic image." if st.goal == "image" else
-                                                    "mosaic. It is fixed once the mosaic is built."))
+        self.shape_row.set_desc("The picture's proportions." if st.goal == "image" else
+                                "Fixed once the mosaic is built.")      # keep it to two lines: the row does not grow
         self._advice()
         self._print_changed()
 
