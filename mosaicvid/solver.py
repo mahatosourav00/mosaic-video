@@ -223,6 +223,9 @@ def solve(tiles: list[Tile], main_path: str | Path, s: Settings) -> Mosaic:
         raise ValueError("No usable tile photos")
     rng = np.random.default_rng(s.seed)
     main = load_rgb(main_path, max_side=3000)
+    if s.grayscale:
+        from .preprocess import to_gray3
+        main = to_gray3(main)
     h, w, _ = main.shape
     if s.grid_follows_video:            # grid takes the video's shape; crop around the subject
         vw, vh = s.video_dims()

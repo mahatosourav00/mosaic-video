@@ -27,3 +27,7 @@ demo/
 # Local tool settings / assistant notes
 CLAUDE.md
 .claude/settings.local.json
+
+# Packaged app (rebuild with packaging/build_exe.py)
+dist/
+build/

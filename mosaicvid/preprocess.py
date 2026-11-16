@@ -26,8 +26,37 @@ class Tile:
     sharpness: float
 
 
-def list_images(folder: str | Path) -> list[Path]:
-    return sorted(p for p in Path(folder).rglob("*") if p.suffix.lower() in IMG_EXT)
+def list_images(folders, recursive: bool = True, exclude=()) -> list[Path]:
+    """Pictures in one folder or several (a path or a list of paths). `exclude` folders are skipped wherever they
+    appear, and the same file is never listed twice."""
+    if isinstance(folders, (str, Path)):
+        folders = [folders]
+    ex = [Path(e).resolve() for e in exclude]
+    seen: set[Path] = set()
+    out: list[Path] = []
+    for f in folders:
+        it = Path(f).rglob("*") if recursive else Path(f).glob("*")
+        for p in it:
+            if p.suffix.lower() not in IMG_EXT:
+                continue
+            rp = p.resolve()
+            if rp in seen or any(e == rp or e in rp.parents for e in ex):
+                continue
+            seen.add(rp)
+            out.append(p)
+    return sorted(out)
+
+
+def to_gray3(arr: np.ndarray) -> np.ndarray:
+    """Black & white, kept as 3 channels so the rest of the pipeline is unchanged."""
+    g = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY)
+    return np.repeat(g[..., None], 3, axis=2)
+
+
+def collection_paths(folder, s: Settings) -> list[Path]:
+    """All tile photos for a job: the main folder (or list), plus the extra folders, minus excluded ones."""
+    base = [folder] if isinstance(folder, (str, Path)) else list(folder)
+    return list_images(base + [d for d in s.extra_tile_dirs if d], s.include_subfolders, s.exclude_dirs)
 
 
 def load_rgb(path: str | Path, max_side: int | None = WORK_SIDE) -> np.ndarray:
@@ -147,6 +176,13 @@ def detect_rotation(arr: np.ndarray) -> int:
     return best if scores[best] > 0 and all(s == 0 for s in others) else 0
 
 
+def centre_square_crop(arr: np.ndarray) -> np.ndarray:
+    h, w, _ = arr.shape
+    side = min(h, w)
+    y, x = (h - side) // 2, (w - side) // 2
+    return arr[y:y + side, x:x + side]
+
+
 def smart_square_crop(arr: np.ndarray) -> np.ndarray:
     """Crop to a square keeping the most salient area (edges + faces)."""
     h, w, _ = arr.shape
@@ -208,6 +244,10 @@ class Record:
 def _key(path: Path, s: Settings) -> str:
     st = path.stat()
     raw = f"v{CACHE_VERSION}|{path.resolve()}|{st.st_mtime_ns}|{st.st_size}|{s.cache_px}|{s.trim_borders}|{s.auto_rotate}"
+    if not s.smart_crop:
+        raw += "|centrecrop"          # only added when off, so existing caches stay valid
+    if s.grayscale:
+        raw += "|gray"
     return hashlib.sha1(raw.encode()).hexdigest()[:20]
 
 
@@ -265,8 +305,10 @@ def _process_ex(path: Path, s: Settings, cache: Path | None) -> tuple[Tile | Non
                 (cache / f"{key}.rej").touch()
                 save_meta()
             return None, rec
-        sq = smart_square_crop(arr)
+        sq = smart_square_crop(arr) if s.smart_crop else centre_square_crop(arr)
         out = np.asarray(Image.fromarray(sq).resize((s.cache_px, s.cache_px), Image.LANCZOS))
+        if s.grayscale:
+            out = to_gray3(out)
     except Exception as e:
         rec.status, rec.reason = "rejected", f"unreadable ({type(e).__name__}: {e})"[:120]
         return None, rec
@@ -316,7 +358,7 @@ def load_tiles(paths: list[str], s: Settings, cache_dir: str | Path | None = Non
 def prepare_tiles_report(folder: str | Path, s: Settings, cache_dir: str | Path | None = None,
                          progress=None) -> tuple[list[Tile], list[Record]]:
     """Like prepare_tiles but also returns one Record per input photo."""
-    paths = list_images(folder)
+    paths = collection_paths(folder, s)
     cache = None
     if cache_dir:
         cache = Path(cache_dir)

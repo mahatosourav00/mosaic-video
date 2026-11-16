@@ -6,3 +6,5 @@ imagehash
 imageio-ffmpeg
 moderngl
 pytest
+PySide6
+qrcode

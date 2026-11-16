@@ -82,3 +82,82 @@ def test_animation_styles_make_valid_plans(tmp_path):
         assert (p.inst[:, 8] + p.inst[:, 9]).max() < s.duration * 0.9, name   # everyone landed before the finale
         eye, target, _ = p.camera(s.duration)
         assert np.isfinite(eye).all() and np.isfinite(target).all()
+
+
+def test_runner_image_job_and_errors(tmp_path):
+    from mosaicvid.runner import run_job
+    rng = np.random.default_rng(3)
+    d = tmp_path / "tiles"; d.mkdir()
+    for i in range(30):
+        make_photo(rng).save(d / f"p{i}.jpg")
+    main = tmp_path / "main.png"
+    make_photo(rng, 300, 400).save(main)
+    ev = []
+    rc = run_job({"mode": "image", "tiles_dir": str(d), "main_image": str(main), "out_dir": str(tmp_path / "out"),
+                  "settings": {"num_tiles": 150, "cell_px": 16, "max_uses": 12, "min_distance": 2, "dedupe": False,
+                               "min_sharpness": 0, "smart_crop": False}}, ev.append)
+    assert rc == 0
+    kinds = [e["event"] for e in ev]
+    assert kinds[0] == "start" and kinds[-1] == "result"
+    assert [e["stage"] for e in ev if e["event"] == "stage"] == ["prepare", "solve", "still"]
+    assert (tmp_path / "out" / "mosaic.png").exists() and (tmp_path / "out" / "scene.json").exists()
+    bad = []
+    assert run_job({"mode": "image", "tiles_dir": str(d)}, bad.append) == 1
+    assert bad[-1]["event"] == "error" and "main_image" in bad[-1]["message"]
+
+
+def test_every_image_format_is_written_and_readable(tmp_path):
+    from mosaicvid.runner import save_image
+    from mosaicvid.settings import IMAGE_FORMATS
+    img = np.random.default_rng(0).integers(0, 255, (60, 40, 3), dtype=np.uint8)
+    sizes = {}
+    for fmt, ext in IMAGE_FORMATS.items():
+        s = Settings(image_format=fmt, image_quality=80)
+        p = save_image(img, tmp_path, s)
+        assert p.name == f"mosaic.{ext}" and p.exists()
+        with Image.open(p) as im:
+            assert im.size == (40, 60)
+        sizes[fmt] = p.stat().st_size
+    assert sizes["jpg"] < sizes["png"]
+    assert save_image(img, tmp_path, Settings(image_format="bogus")).name == "mosaic.png"   # unknown -> PNG
+
+
+def test_collection_folders_subfolders_and_excludes(tmp_path):
+    from mosaicvid.preprocess import list_images
+    rng = np.random.default_rng(5)
+    a, b = tmp_path / "a", tmp_path / "b"
+    (a / "sub").mkdir(parents=True); (a / "skip").mkdir(); b.mkdir()
+    for d, n in ((a, 3), (a / "sub", 2), (a / "skip", 4), (b, 5)):
+        for i in range(n):
+            make_photo(rng, 64, 64).save(d / f"{d.name}{i}.jpg")
+    assert len(list_images(a)) == 9                                        # sub-folders included by default
+    assert len(list_images(a, recursive=False)) == 3
+    assert len(list_images([a, b])) == 14                                  # several folders
+    assert len(list_images([a, b], exclude=[a / "skip"])) == 10            # excluded folder left out
+    assert len(list_images([a, a])) == 9                                   # same file is never listed twice
+
+
+def test_black_and_white_print_size_and_dpi(tmp_path):
+    from mosaicvid.runner import run_job
+    rng = np.random.default_rng(8)
+    d = tmp_path / "tiles"; d.mkdir()
+    for i in range(24):
+        make_photo(rng).save(d / f"p{i}.jpg")
+    main = tmp_path / "main.png"
+    make_photo(rng, 300, 400).save(main)
+    cache = tmp_path / "shared_cache"
+    ev = []
+    rc = run_job({"mode": "image", "tiles_dir": str(d), "main_image": str(main), "out_dir": str(tmp_path / "out"),
+                  "cache_dir": str(cache),
+                  "settings": {"num_tiles": 120, "max_uses": 12, "min_distance": 2, "dedupe": False, "min_sharpness": 0,
+                               "grayscale": True, "print_width_px": 1200, "print_dpi": 300, "image_format": "tiff"}},
+                 ev.append)
+    assert rc == 0, ev[-1]
+    res = ev[-1]
+    w, h = res["stats"]["image_px"]
+    assert 1200 <= w <= 1200 + 8 * 60            # within one tile column of the requested width
+    assert any(cache.iterdir())                  # the shared cache folder was used
+    with Image.open(tmp_path / "out" / "mosaic.tif") as im:
+        assert im.size == (w, h) and round(im.info["dpi"][0]) == 300
+        a = np.asarray(im.convert("RGB")).astype(int)
+    assert np.abs(a[..., 0] - a[..., 1]).max() <= 3 and np.abs(a[..., 1] - a[..., 2]).max() <= 3   # grey

@@ -6,6 +6,9 @@ from dataclasses import dataclass, field, asdict, fields
 from pathlib import Path
 
 
+IMAGE_FORMATS = {"png": "png", "jpg": "jpg", "webp": "webp", "tiff": "tif"}     # name -> file extension
+
+
 @dataclass
 class Settings:
     # ---- layout -------------------------------------------------------
@@ -36,12 +39,25 @@ class Settings:
     # ---- preprocessing ------------------------------------------------
     trim_borders: bool = True
     auto_rotate: bool = False        # EXPERIMENTAL: Haar-based, ~2/3 right on the test set; needs a real orientation model
+    smart_crop: bool = True          # crop to square around faces/detail (off = plain centre crop)
     dedupe: bool = True
     min_side: int = 96               # reject photos smaller than this
     min_sharpness: float = 8.0       # reject very blurry photos (Laplacian var)
     cache_px: int = 256              # stored tile resolution
 
     seed: int = 42
+
+    # ---- photo collection ---------------------------------------------
+    include_subfolders: bool = True  # also use photos inside sub-folders
+    extra_tile_dirs: list = field(default_factory=list)   # more folders of tile photos
+    exclude_dirs: list = field(default_factory=list)      # folders (anywhere inside) to leave out
+    grayscale: bool = False          # black & white mosaic (tiles and main picture)
+
+    # ---- still image output -------------------------------------------
+    print_width_px: int = 0          # >0: size the still to about this width (print); 0 = use cell_px
+    print_dpi: int = 0               # >0: write this DPI into png / jpg / tiff files
+    image_format: str = "png"        # png | jpg | webp | tiff
+    image_quality: int = 95          # jpg / webp quality 1..100
 
     # ---- video --------------------------------------------------------
     video_aspect: str = "9:16"       # "W:H", e.g. 9:16, 16:9, 1:1, 4:5
@@ -97,6 +113,8 @@ class Settings:
             raise ValueError("Only tile_shape='square' is implemented so far")
         if self.num_tiles < 4:
             raise ValueError("num_tiles must be >= 4")
+        if self.image_format not in IMAGE_FORMATS:
+            raise ValueError(f"image_format must be one of {', '.join(IMAGE_FORMATS)}")
         if self.subtile_grid < 2:
             raise ValueError("subtile_grid must be >= 2")
         for name in ("tint", "main_blend", "subject_weight"):

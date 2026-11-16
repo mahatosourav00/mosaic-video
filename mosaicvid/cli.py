@@ -81,6 +81,8 @@ def main(argv=None) -> int:
     i.add_argument("--tiles", required=True)
     i.add_argument("--out", required=True)
     i.add_argument("--cache-px", type=int)
+    r = sub.add_parser("run", help="run a job file (used by the GUI); prints one JSON event per line")
+    r.add_argument("--job", required=True, help="job JSON file (see mosaicvid/runner.py)")
     v = sub.add_parser("video", help="render the animation video from a built scene.json")
     v.add_argument("--scene", required=True, help="scene.json from 'build'")
     v.add_argument("--out", help="output file (default: next to scene.json)")
@@ -107,6 +109,11 @@ def main(argv=None) -> int:
         return _video(a)
     if a.cmd == "inspect":
         return _inspect(a)
+    if a.cmd == "run":
+        import json
+        from .runner import run_job
+        job = json.loads(Path(a.job).read_text(encoding="utf-8"))
+        return run_job(job, lambda ev: print(json.dumps(ev), flush=True))
 
     s = Settings.from_json(a.settings) if a.settings else Settings()
     for k, v in vars(a).items():
