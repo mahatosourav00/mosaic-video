@@ -20,6 +20,9 @@ main_crop.jpg
 subject_map.png
 mosaic.png
 
+# ...except the README showcase media
+!docs/images/*.gif
+
 # Personal / separate-project material
 BIRTHDAY_PROJECT_BRIEF.md
 demo/

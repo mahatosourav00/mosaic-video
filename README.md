@@ -8,6 +8,19 @@ if you prefer).
   <img src="docs/images/home.png" alt="Mosaic Studio home screen" width="80%">
 </p>
 
+## See it in action
+
+A 64 x 64 mosaic of **Earth** made from ~780 public-domain NASA photos, and the animation of it assembling
+(the *swarm* style):
+
+<p align="center">
+  <img src="docs/images/sample-animation.gif" alt="Animation: thousands of tiny photos fly in and assemble into a picture of Earth" width="48%">
+  <img src="docs/images/sample-mosaic.jpg" alt="Finished mosaic of Earth built from NASA photos" width="48%">
+</p>
+
+<sub>Made with Mosaic Studio from images in the [NASA Image and Video Library](https://images.nasa.gov/) (NASA media is
+generally not copyrighted). The GIF is a small, low-colour preview; the real MP4 is 1080p and far smoother.</sub>
+
 ## Download (Windows)
 
 1. Get **MosaicStudio-vX.Y.Z-windows.zip** from the [latest release](https://github.com/mahatosourav00/mosaic-video/releases/latest) and unzip it anywhere (keep the folder together).
