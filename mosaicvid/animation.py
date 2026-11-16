@@ -25,6 +25,8 @@ class Plan:
     ramp: tuple                      # main-image blend ramp (t0, t1) seconds
     shine: tuple                     # light-sweep (t0, t1) seconds
     fov: Callable[[float], float] | None = None   # t -> vertical FOV in degrees (None = constant FOV_DEG)
+    state: Callable[[float], tuple] | None = None  # t -> (target x, target y, distance, yaw, pitch, roll): the camera's
+                                                   # parameters, for callers that continue the move (plugins)
 
 
 # columns of Plan.inst:
@@ -246,13 +248,13 @@ def swarm(mosaic, tiles, s) -> Plan:
     inst[:, 15], inst[:, 16], inst[:, 17] = kmul, shrink, ease
     inst[:, 18:21] = C
 
-    return Plan(inst, camera, d_full, (0.78 * D, 0.92 * D), (0.84 * D, 0.97 * D))
+    return Plan(inst, camera, d_full, (0.78 * D, 0.92 * D), (0.84 * D, 0.97 * D), state=state)
 
 
 # --------------------------------------------------- simple styles (vortex / wave / zoom)
 def _simple_plan(mosaic, tiles, s, S, C, key, camera, d_full, *, spin_amp, tilt_amp, kmul_rng, flight_frac,
                  window=(0.04, 0.60), heroes=False, fov=None, pulse_phase=-math.pi / 2,
-                 opening=None, hero_kw=None) -> Plan:
+                 opening=None, hero_kw=None, state=None) -> Plan:
     """Shared tail of the simple styles: arrival order from `key`, pulses, instance rows.
     opening=(fraction, seconds): that fraction of the earliest tiles lands within the first `seconds`, from
     nearby, so the opening close-up is never empty. hero_kw: extra options for _place_heroes."""
@@ -300,7 +302,7 @@ def _simple_plan(mosaic, tiles, s, S, C, key, camera, d_full, *, spin_amp, tilt_
     inst[:, 12:15] = _rgb_offsets(mosaic, tiles) if s.tint > 0 else 0.0
     inst[:, 15], inst[:, 16], inst[:, 17] = kmul, shrink, ease
     inst[:, 18:21] = C
-    return Plan(inst, camera, d_full, (0.78 * D, 0.92 * D), (0.84 * D, 0.97 * D), fov)
+    return Plan(inst, camera, d_full, (0.78 * D, 0.92 * D), (0.84 * D, 0.97 * D), fov, state)
 
 
 def _path_camera(mosaic, D: float, seed: int, kt, tx, ty, dist, yaw, pitch, roll, fov_boost: float = 9.0,
@@ -400,7 +402,7 @@ def vortex(mosaic, tiles, s) -> Plan:
     dd = np.hypot(wx[:, None] - st[None, :, 0], wy[:, None] - st[None, :, 1]) / vis_h[None, :]
     key = ts[dd.argmin(axis=1)] + rng.normal(0, 0.07 * D, N) + 0.05 * D * rn
     return _simple_plan(mosaic, tiles, s, S, C, key, camera, d_full, spin_amp=4.0, tilt_amp=1.4,
-                        kmul_rng=(0.55, 0.95), flight_frac=0.14, window=(0.0, 0.62), heroes=True, fov=fov,
+                        kmul_rng=(0.55, 0.95), flight_frac=0.14, window=(0.0, 0.62), heroes=True, fov=fov, state=state,
                         pulse_phase=0.4,       # open on an arrival burst, not on the quietest beat
                         opening=(0.08, 1.2),   # 8% of tiles land in the first 1.2 s: the opening shot is never empty
                         hero_kw=dict(edge_bias=True, size_scale=0.85, min_gap=0.04 * D, q_hi=0.62))   # showcase tiles stay off the face
@@ -434,7 +436,7 @@ def wave(mosaic, tiles, s) -> Plan:
         [-.12, -.12, -.12, -.10, -.08, -.03, 0, 0, 0],                                # low angle, looking up at the rise
         [0, 0, 0, 0, 0, 0, 0, 0, 0], fov_boost=3.0, drift=0.25, arc=0.4)
     return _simple_plan(mosaic, tiles, s, S, C, key, camera, d_full, spin_amp=2.2, tilt_amp=1.6,
-                        kmul_rng=(0.55, 0.95), flight_frac=0.16, window=(0.02, 0.60), heroes=True, fov=fov,
+                        kmul_rng=(0.55, 0.95), flight_frac=0.16, window=(0.02, 0.60), heroes=True, fov=fov, state=state,
                         opening=(0.12, 1.2, 0.12), hero_kw=dict(edge_bias=True, size_scale=0.85, min_gap=0.04 * D, q_hi=0.62))
 
 
@@ -461,7 +463,7 @@ def zoom(mosaic, tiles, s) -> Plan:
         np.array([.17, .19, .23, .30, .46, .72, .94, 1.0, .985]) * d_full,            # macro -> accelerating pull-back
         z, z, z, fov_boost=-9.0, drift=0.0, arc=0.0)                                   # narrow lens at first, widening
     return _simple_plan(mosaic, tiles, s, S, C, key, camera, d_full, spin_amp=1.4, tilt_amp=1.0,
-                        kmul_rng=(0.6, 1.0), flight_frac=0.14, window=(0.0, 0.62), heroes=True, fov=fov,
+                        kmul_rng=(0.6, 1.0), flight_frac=0.14, window=(0.0, 0.62), heroes=True, fov=fov, state=state,
                         pulse_phase=0.4, opening=(0.10, 1.2),
                         hero_kw=dict(edge_bias=True, size_scale=0.85, min_gap=0.04 * D, q_hi=0.62))
 

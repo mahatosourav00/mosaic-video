@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPen, QBrush
-from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget
 
 from ..theme import C
 from ..coffee import Signature
@@ -28,6 +28,8 @@ class GoalArt(QWidget):
         p.setBrush(QBrush(g))
         p.drawRoundedRect(0, 0, w, h, 14, 14)
 
+        sz = min(88, h - 24)                      # the little mosaic scales with the card art's height
+
         def mosaic(x0, y0, size, n):
             cell = size / n
             import random
@@ -41,21 +43,21 @@ class GoalArt(QWidget):
                     p.drawRoundedRect(x0 + i * cell + 1, y0 + j * cell + 1, cell - 2, cell - 2, 2, 2)
 
         if self.kind == "image":
-            mosaic(w / 2 - 44, 14, 88, 8)
+            mosaic(w / 2 - sz / 2, (h - sz) / 2, sz, 8)
         elif self.kind == "video":
-            mosaic(w / 2 - 44, 14, 88, 8)
+            mosaic(w / 2 - sz / 2, (h - sz) / 2, sz, 8)
             p.setBrush(QColor(0, 0, 0, 120))
-            p.drawEllipse(w / 2 - 22, h / 2 - 22, 44, 44)
+            p.drawEllipse(w / 2 - sz / 4, h / 2 - sz / 4, sz / 2, sz / 2)
             p.setBrush(QColor("white"))
             from PySide6.QtGui import QPolygonF
             from PySide6.QtCore import QPointF
             cx, cy = w / 2, h / 2
             p.drawPolygon(QPolygonF([QPointF(cx - 6, cy - 10), QPointF(cx - 6, cy + 10), QPointF(cx + 10, cy)]))
         else:                                   # "both": the mosaic with a small play badge in the corner
-            mosaic(w / 2 - 44, 14, 88, 8)
+            mosaic(w / 2 - sz / 2, (h - sz) / 2, sz, 8)
             from PySide6.QtCore import QPointF
             from PySide6.QtGui import QPolygonF
-            cx, cy = w / 2 + 40, h - 26
+            cx, cy = w / 2 + sz / 2 - 4, (h + sz) / 2 - 6
             p.setBrush(QColor(0, 0, 0, 170))
             p.drawEllipse(QPointF(cx, cy), 15, 15)
             p.setBrush(QColor("white"))
@@ -74,7 +76,7 @@ class GoalCard(QFrame):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(20, 20, 20, 20)
         lay.setSpacing(12)
-        lay.addWidget(GoalArt(key, 64 if compact else 120))
+        lay.addWidget(GoalArt(key, 84 if compact else 120))
         lay.addWidget(label(title, "title"))
         lay.addWidget(label(text, "sub", wrap=True))
         lay.addStretch(1)
@@ -103,11 +105,22 @@ class GoalCard(QFrame):
 
 class HomePage(QWidget):
     chosen = Signal(str)
+    add_plugin = Signal()
 
     def __init__(self, plugins: dict | None = None):
         super().__init__()
         self.setObjectName("Page")
-        lay = QVBoxLayout(self)
+        outer = QVBoxLayout(self)                    # scrolls, so the cards keep their size however many plugins there are
+        outer.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        host = QWidget()
+        host.setObjectName("Page")
+        scroll.setWidget(host)
+        outer.addWidget(scroll)
+        lay = QVBoxLayout(host)
         lay.setContentsMargins(56, 52, 56, 40)
         lay.setSpacing(8)
         lay.addWidget(label("What would you like to do?", "display"))
@@ -139,13 +152,18 @@ class HomePage(QWidget):
                 c = GoalCard(f"plugin:{pl.id}", pl.name, pl.manifest.get("description", ""),
                              list(pl.manifest.get("chips") or []), compact=True)
                 c.clicked.connect(self.chosen)
-                grid.addWidget(c, i // 3, i % 3)
-            for col in range(3):
+                grid.addWidget(c, i // 2, i % 2)
+            for col in range(2):                       # same two columns as the cards above
                 grid.setColumnStretch(col, 1)
             lay.addLayout(grid)
         lay.addStretch(1)
         foot = QHBoxLayout()
         foot.addWidget(label("Tip: you can drag a folder of photos onto the next screen.", "faint"))
         foot.addStretch(1)
+        add = QPushButton("Add a plugin\u2026")
+        add.setObjectName("Ghost")
+        add.setToolTip("Pick a plugin folder (it has a plugin.json in it) to add its card to this screen.")
+        add.clicked.connect(self.add_plugin)
+        foot.addWidget(add)
         foot.addWidget(Signature())
         lay.addLayout(foot)

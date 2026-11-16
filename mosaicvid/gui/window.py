@@ -41,9 +41,8 @@ class MainWindow(QMainWindow):
         self.top = QStackedWidget()
         outer.addWidget(self.top)
 
-        self.home = HomePage(self.state.plugins)
-        self.home.chosen.connect(self.start_flow)
-        self.top.addWidget(self.home)
+        self.home = None
+        self._make_home()
 
         flow = QWidget()
         fl = QHBoxLayout(flow)
@@ -63,13 +62,7 @@ class MainWindow(QMainWindow):
             pg.changed.connect(self._refresh)
             self.pages[pg.key] = pg
             self.stack.addWidget(pg)
-        for pl in self.state.plugins.values():               # the form steps of every plugin
-            for i in range(len(pl.steps)):
-                pg = PluginStepPage(self.state, pl, i)
-                pg.changed.connect(self._refresh)
-                self.pages[pg.key] = pg
-                self.stack.addWidget(pg)
-                self.rail_names[pg.key] = pg.title
+        self._make_plugin_pages()
         self.create: CreatePage = self.pages["create"]
         self.create.phase_changed.connect(lambda _p: self._refresh())
         self.create.make_another.connect(self._make_another)
@@ -95,6 +88,48 @@ class MainWindow(QMainWindow):
         fl.addLayout(right, 1)
         self.top.addWidget(flow)
         self.step = 0
+
+    # ------------------------------------------------------------------ plugins
+    def _make_home(self):
+        """(Re)build the home screen: it lists the installed plugins."""
+        old = self.home
+        self.home = HomePage(self.state.plugins)
+        self.home.chosen.connect(self.start_flow)
+        self.home.add_plugin.connect(self._add_plugin)
+        self.top.insertWidget(0, self.home)
+        if old is not None:
+            self.top.removeWidget(old)
+            old.setParent(None)
+            old.deleteLater()
+        self.top.setCurrentIndex(0)
+
+    def _make_plugin_pages(self):
+        for pl in self.state.plugins.values():               # the form steps of every plugin (new ones only)
+            for i in range(len(pl.steps)):
+                key = f"plugin.{pl.id}.{i}"
+                if key in self.pages:
+                    continue
+                pg = PluginStepPage(self.state, pl, i)
+                pg.changed.connect(self._refresh)
+                self.pages[pg.key] = pg
+                self.stack.addWidget(pg)
+                self.rail_names[pg.key] = pg.title
+
+    def _add_plugin(self):
+        folder = QFileDialog.getExistingDirectory(self, "Choose the plugin's folder (it contains plugin.json)",
+                                                  str(Path.home() / "Downloads"))
+        if not folder:
+            return
+        try:
+            pid = plugin_api.link(folder)
+        except plugin_api.PluginError as e:
+            QMessageBox.warning(self, "Could not add the plugin", str(e))
+            return
+        self.state.plugins = plugin_api.discover()
+        self._make_plugin_pages()
+        self._make_home()
+        QMessageBox.information(self, "Plugin added",
+                                f"\u201c{self.state.plugins[pid].name}\u201d is now on the home screen.")
 
     # ------------------------------------------------------------------ navigation
     @property

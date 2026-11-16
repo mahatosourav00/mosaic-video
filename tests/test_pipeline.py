@@ -82,6 +82,9 @@ def test_animation_styles_make_valid_plans(tmp_path):
         assert (p.inst[:, 8] + p.inst[:, 9]).max() < s.duration * 0.9, name   # everyone landed before the finale
         eye, target, _ = p.camera(s.duration)
         assert np.isfinite(eye).all() and np.isfinite(target).all()
+        st = p.state(s.duration)                 # plugins continue the camera move from these parameters
+        assert len(st) == 6 and np.isfinite(st).all(), name
+        assert abs(st[2] * np.cos(st[3]) * np.cos(st[4]) - (eye - target)[2]) < 1e-6, name   # consistent with camera()
 
 
 def test_runner_image_job_and_errors(tmp_path):

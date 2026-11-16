@@ -140,3 +140,22 @@ def test_form_page_is_built_from_the_manifest(home, monkeypatch):
     pg.sync()
     assert pg.findChildren(SliderField)[0].value() == 5 and v["style.size"] == 5
     app.processEvents()
+
+
+def test_add_plugin_button_links_and_shows_the_new_card(home, monkeypatch):
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
+    from mosaicvid.gui.window import MainWindow
+    app = QApplication.instance() or QApplication([])
+    w = MainWindow()
+    assert "hello" not in w.state.plugins and "plugin.hello.0" not in w.pages
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", staticmethod(lambda *a, **k: str(home)))
+    monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: None))
+    w._add_plugin()
+    assert "hello" in w.state.plugins and "plugin.hello.0" in w.pages
+    assert w.top.currentIndex() == 0 and w.top.count() == 2          # home rebuilt in place, flow still second
+    assert "hello" in P.discover()                                    # and remembered for the next start
+    w.start_flow("plugin:hello")
+    assert w.keys == ["plugin.hello.0", "create"]
+    app.processEvents()
