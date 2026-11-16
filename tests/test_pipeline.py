@@ -60,3 +60,25 @@ def test_full_pipeline_constraints(tmp_path):
                 assert (pts[i][0] - pts[j][0]) ** 2 + (pts[i][1] - pts[j][1]) ** 2 >= 9 - 1e-6
     img = render_still(m, tiles, s)
     assert img.shape == (m.rows * 16, m.cols * 16, 3)
+
+
+def test_animation_styles_make_valid_plans(tmp_path):
+    from mosaicvid.animation import STYLES, N_COLS, make_plan
+    rng = np.random.default_rng(1)
+    d = tmp_path / "tiles"; d.mkdir()
+    for i in range(30):
+        make_photo(rng).save(d / f"p{i}.jpg")
+    main = tmp_path / "main.png"
+    make_photo(rng, 300, 400).save(main)
+    s = Settings(num_tiles=200, cell_px=16, max_uses=12, min_distance=2, dedupe=False, min_sharpness=0)
+    tiles = prepare_tiles(d, s, cache_dir=tmp_path / "c")
+    m = solve(tiles, main, s)
+    assert set(STYLES) >= {"swarm", "vortex", "wave", "zoom"}
+    for name in STYLES:
+        s.style = name
+        p = make_plan(m, tiles, s)
+        assert p.inst.shape == (len(m.cells), N_COLS)
+        assert np.isfinite(p.inst).all(), name
+        assert (p.inst[:, 8] + p.inst[:, 9]).max() < s.duration * 0.9, name   # everyone landed before the finale
+        eye, target, _ = p.camera(s.duration)
+        assert np.isfinite(eye).all() and np.isfinite(target).all()

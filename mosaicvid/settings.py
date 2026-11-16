@@ -35,6 +35,7 @@ class Settings:
 
     # ---- preprocessing ------------------------------------------------
     trim_borders: bool = True
+    auto_rotate: bool = False        # EXPERIMENTAL: Haar-based, ~2/3 right on the test set; needs a real orientation model
     dedupe: bool = True
     min_side: int = 96               # reject photos smaller than this
     min_sharpness: float = 8.0       # reject very blurry photos (Laplacian var)

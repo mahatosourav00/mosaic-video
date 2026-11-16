@@ -37,6 +37,24 @@ def _video(a) -> int:
     return 0
 
 
+def _inspect(a) -> int:
+    from .preprocess import prepare_tiles_report
+    from .report import write_report
+    s = Settings()
+    if a.cache_px:
+        s.cache_px = a.cache_px
+    out = Path(a.out)
+    t0 = time.time()
+    def _prog(i, n):
+        if i == n or i % 25 == 0:
+            print(f"  preprocessing {i}/{n}  ({time.time() - t0:.0f}s)", flush=True)
+    tiles, recs = prepare_tiles_report(a.tiles, s, cache_dir=out / "cache", progress=_prog)
+    info = write_report(recs, tiles, out / "report")
+    print(f"{len(recs)} photos in {time.time() - t0:.1f}s -> {info['counts']}")
+    print("wrote", ", ".join(info["files"]), "+ report.csv in", out / "report")
+    return 0
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="mosaicvid")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -59,6 +77,10 @@ def main(argv=None) -> int:
     b.add_argument("--seed", type=int)
     b.add_argument("--aspect", dest="video_aspect", help="video aspect the grid should follow, e.g. 9:16")
     b.add_argument("--res", type=int, dest="video_res")
+    i = sub.add_parser("inspect", help="preprocess only: write contact sheets + report.csv, no mosaic")
+    i.add_argument("--tiles", required=True)
+    i.add_argument("--out", required=True)
+    i.add_argument("--cache-px", type=int)
     v = sub.add_parser("video", help="render the animation video from a built scene.json")
     v.add_argument("--scene", required=True, help="scene.json from 'build'")
     v.add_argument("--out", help="output file (default: next to scene.json)")
@@ -83,6 +105,8 @@ def main(argv=None) -> int:
 
     if a.cmd == "video":
         return _video(a)
+    if a.cmd == "inspect":
+        return _inspect(a)
 
     s = Settings.from_json(a.settings) if a.settings else Settings()
     for k, v in vars(a).items():

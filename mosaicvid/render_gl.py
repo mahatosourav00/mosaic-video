@@ -416,7 +416,8 @@ def render_video(m: Mosaic, tiles, s: Settings, out_path: str | Path, preview: b
                 jx, jy = JITTER[sj] if nsub > 1 else (0.0, 0.0)
                 eye, target, roll = plan.camera(t)
                 view = look_at(eye, target, roll)
-                pj = proj.copy(); pj[0, 2] += jx * 2.0 / W; pj[1, 2] += jy * 2.0 / H
+                pj = (perspective(plan.fov(t), W / H, 0.5, plan.d_full * 6) if plan.fov else proj).copy()
+                pj[0, 2] += jx * 2.0 / W; pj[1, 2] += jy * 2.0 / H
                 vpb = (pj @ view).T.astype("f4").tobytes()
                 right, up, fwd = view[0, :3], view[1, :3], -view[2, :3]
                 for pr in (prog, over, glow, part):

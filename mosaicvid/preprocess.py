@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import hashlib
+import threading
+import json
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -44,18 +46,29 @@ def _trim_side(lines_std: np.ndarray, lines_mean: np.ndarray, limit: int,
                std_thr: float = 7.0, color_tol: float = 14.0, jump_min: float = 18.0) -> int:
     """Count uniform border lines at the start of a (n, 3) profile."""
     ref = lines_mean[0]
+    pure = bool(ref.min() >= 250 or ref.max() <= 5)   # pure white / black frame
+    if pure:  # strict run, so a soft near-white gradient after the frame is not swallowed
+        std_thr, color_tol = 2.5, 5.0
+        limit = min(limit, int(len(lines_std) * 0.12))  # wider = blown-out sky/wall, not a frame
     k = 0
     while k < limit and lines_std[k] < std_thr and np.abs(lines_mean[k] - ref).max() < color_tol:
         k += 1
     if k == 0 or k >= limit:
         return 0
-    # a real border ends with a sharp jump; a smooth sky/wall does not
-    if np.abs(lines_mean[k] - lines_mean[k - 1]).max() < jump_min:
+    # a real border ends with a sharp jump; a smooth sky/wall does not (pure white/black frames are exempt)
+    # (pure white/black frames up to 6% are exempt; thicker ones still need a sharp edge)
+    exempt = pure and k <= len(lines_std) * 0.06
+    if not exempt and np.abs(lines_mean[k] - lines_mean[k - 1]).max() < jump_min:
         return 0
     return k
 
 
 def trim_borders(arr: np.ndarray, max_frac: float = 0.3) -> np.ndarray:
+    return trim_borders_info(arr, max_frac)[0]
+
+
+def trim_borders_info(arr: np.ndarray, max_frac: float = 0.3):
+    """Returns (trimmed array, (top, bottom, left, right) pixels removed)."""
     h, w, _ = arr.shape
     a = arr.astype(np.float32)
     row_std = a.std(axis=1).max(axis=1)      # (h,)
@@ -71,24 +84,67 @@ def trim_borders(arr: np.ndarray, max_frac: float = 0.3) -> np.ndarray:
     t, b = (top + pad if top else 0), (bot + pad if bot else 0)
     l, r = (left + pad if left else 0), (right + pad if right else 0)
     if h - t - b < h * 0.4 or w - l - r < w * 0.4:
-        return arr
-    return arr[t:h - b, l:w - r]
+        return arr, (0, 0, 0, 0)
+    return arr[t:h - b, l:w - r], (t, b, l, r)
 
 
 # ------------------------------------------------------------- smart crop
+cv2.setNumThreads(1)         # we already parallelise per photo
+cv2.ocl.setUseOpenCL(False)  # OpenCV's OpenCL (integrated-GPU driver) path left the process unkillable after cold runs
 _FACE = None
+_FACE_LOCK = threading.Lock()
+
+
+class _LockedDetector:
+    """One shared CascadeClassifier, calls serialised: it is not thread-safe (concurrent calls crash
+    with an access violation) and per-thread copies made the process hang at exit on Windows."""
+
+    def __init__(self, det):
+        self._det = det
+
+    def detectMultiScale(self, *args, **kwargs):
+        with _FACE_LOCK:
+            return self._det.detectMultiScale(*args, **kwargs)
 
 
 def _face_detector():
     global _FACE
     if _FACE is None:
-        try:
-            path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-            det = cv2.CascadeClassifier(path)
-            _FACE = det if not det.empty() else False
-        except Exception:
-            _FACE = False
+        with _FACE_LOCK:
+            if _FACE is None:
+                try:
+                    path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+                    det = cv2.CascadeClassifier(path)
+                    _FACE = _LockedDetector(det) if not det.empty() else False
+                except Exception:
+                    _FACE = False
     return _FACE
+
+
+def detect_rotation(arr: np.ndarray) -> int:
+    """How many 90-degree CCW turns (0-3) make faces upright. Conservative: returns 0 unless an
+    upright face is absent AND a face is clearly found in exactly one rotated version."""
+    det = _face_detector()
+    if not det:
+        return 0
+    h, w, _ = arr.shape
+    sc = 256.0 / max(h, w)
+    gray = cv2.cvtColor(cv2.resize(arr, (max(1, int(w * sc)), max(1, int(h * sc))), interpolation=cv2.INTER_AREA),
+                        cv2.COLOR_RGB2GRAY)
+    scores = []
+    for k in range(4):
+        g = np.ascontiguousarray(np.rot90(gray, k))
+        try:
+            # strict: small/low-confidence hits (figures, textures) caused false rotations
+            faces = det.detectMultiScale(g, 1.15, 6 if k == 0 else 10, minSize=(24, 24) if k == 0 else (44, 44))
+        except Exception:
+            faces = []
+        scores.append(float(sum(fw * fh for (_, _, fw, fh) in faces)))
+        if k == 0 and scores[0] > 0:
+            return 0                       # already upright
+    best = int(np.argmax(scores))
+    others = [s for i, s in enumerate(scores) if i not in (0, best)]
+    return best if scores[best] > 0 and all(s == 0 for s in others) else 0
 
 
 def smart_square_crop(arr: np.ndarray) -> np.ndarray:
@@ -132,9 +188,26 @@ def smart_square_crop(arr: np.ndarray) -> np.ndarray:
 
 
 # ------------------------------------------------------------- pipeline
+CACHE_VERSION = 5   # bump when preprocessing logic changes (invalidates the disk cache)
+
+
+@dataclass
+class Record:
+    """What happened to one input photo (feeds the report / contact sheet)."""
+    path: str
+    status: str = "ok"          # ok | rejected | duplicate
+    reason: str = ""
+    size: tuple = (0, 0)        # original (w, h) as loaded (<= WORK_SIDE)
+    rotation: int = 0           # degrees CCW applied by auto-rotate (0/90/180/270)
+    trim: tuple = (0, 0, 0, 0)  # px removed top, bottom, left, right (at working size)
+    sharpness: float = 0.0
+    tile_index: int = -1        # index into the final tile list (ok only)
+    duplicate_of: str = ""
+
+
 def _key(path: Path, s: Settings) -> str:
     st = path.stat()
-    raw = f"{path.resolve()}|{st.st_mtime_ns}|{st.st_size}|{s.cache_px}|{s.trim_borders}"
+    raw = f"v{CACHE_VERSION}|{path.resolve()}|{st.st_mtime_ns}|{st.st_size}|{s.cache_px}|{s.trim_borders}|{s.auto_rotate}"
     return hashlib.sha1(raw.encode()).hexdigest()[:20]
 
 
@@ -146,41 +219,84 @@ def _sharpness(arr: np.ndarray) -> float:
     return float(cv2.Laplacian(g, cv2.CV_64F).var())
 
 
-def _process_one(path: Path, s: Settings, cache: Path | None) -> Tile | None:
+def _process_ex(path: Path, s: Settings, cache: Path | None) -> tuple[Tile | None, Record]:
+    rec = Record(str(path))
     key = _key(path, s)
+    meta = cache / f"{key}.json" if cache else None
     if cache:
         hit, rej = cache / f"{key}.npy", cache / f"{key}.rej"
+        if (rej.exists() or hit.exists()) and meta.exists():
+            try:
+                rec.__dict__.update({k: tuple(v) if isinstance(v, list) else v
+                                     for k, v in json.loads(meta.read_text("utf-8")).items() if k in rec.__dict__})
+            except Exception:
+                pass
         if rej.exists():
-            return None
+            rec.status = "rejected"
+            rec.reason = rec.reason or "rejected (cached)"
+            return None, rec
         if hit.exists():
             data = np.load(hit)
-            return Tile(str(path), data, _sharpness(data))
+            rec.sharpness = rec.sharpness or _sharpness(data)
+            return Tile(str(path), data, rec.sharpness), rec
+
+    def save_meta():
+        if cache:
+            meta.write_text(json.dumps({"status": rec.status, "reason": rec.reason, "size": rec.size,
+                                        "trim": rec.trim, "sharpness": rec.sharpness,
+                                        "rotation": rec.rotation}), "utf-8")
     try:
         arr = load_rgb(path)
+        rec.size = (arr.shape[1], arr.shape[0])
+        if s.auto_rotate:
+            k = detect_rotation(arr)
+            if k:
+                arr, rec.rotation = np.ascontiguousarray(np.rot90(arr, k)), 90 * k
         if s.trim_borders:
-            arr = trim_borders(arr)
+            arr, rec.trim = trim_borders_info(arr)
         h, w, _ = arr.shape
-        sharp = _sharpness(arr)
-        if min(h, w) < s.min_side or sharp < s.min_sharpness:
+        rec.sharpness = sharp = _sharpness(arr)
+        if min(h, w) < s.min_side:
+            rec.status, rec.reason = "rejected", f"too small ({w}x{h} < {s.min_side}px)"
+        elif sharp < s.min_sharpness:
+            rec.status, rec.reason = "rejected", f"too blurry (sharpness {sharp:.1f} < {s.min_sharpness})"
+        if rec.status == "rejected":
             if cache:
                 (cache / f"{key}.rej").touch()
-            return None
+                save_meta()
+            return None, rec
         sq = smart_square_crop(arr)
         out = np.asarray(Image.fromarray(sq).resize((s.cache_px, s.cache_px), Image.LANCZOS))
-    except Exception:
-        return None
+    except Exception as e:
+        rec.status, rec.reason = "rejected", f"unreadable ({type(e).__name__}: {e})"[:120]
+        return None, rec
     if cache:
         np.save(cache / f"{key}.npy", out)
-    return Tile(str(path), out, sharp)
+        save_meta()
+    return Tile(str(path), out, rec.sharpness), rec
+
+
+def _process_one(path: Path, s: Settings, cache: Path | None) -> Tile | None:
+    return _process_ex(path, s, cache)[0]
+
+
+def _dedupe_ex(tiles: list[Tile], max_dist: int = 4) -> tuple[list[int], dict[int, int]]:
+    """Returns (kept indices in original order, {dropped index: kept index it duplicates})."""
+    hashes = [int(str(imagehash.phash(Image.fromarray(t.image))), 16) for t in tiles]
+    keep: list[int] = []
+    dropped: dict[int, int] = {}
+    for i in sorted(range(len(tiles)), key=lambda i: -tiles[i].sharpness):
+        twin = next((j for j in keep if bin(hashes[i] ^ hashes[j]).count("1") <= max_dist), None)
+        if twin is None:
+            keep.append(i)
+        else:
+            dropped[i] = twin
+    return sorted(keep), dropped
 
 
 def _dedupe(tiles: list[Tile], max_dist: int = 4) -> list[Tile]:
-    hashes = [int(str(imagehash.phash(Image.fromarray(t.image))), 16) for t in tiles]
-    keep: list[int] = []
-    for i in sorted(range(len(tiles)), key=lambda i: -tiles[i].sharpness):
-        if all(bin(hashes[i] ^ hashes[j]).count("1") > max_dist for j in keep):
-            keep.append(i)
-    return [tiles[i] for i in sorted(keep)]
+    keep, _ = _dedupe_ex(tiles, max_dist)
+    return [tiles[i] for i in keep]
 
 
 def load_tiles(paths: list[str], s: Settings, cache_dir: str | Path | None = None) -> list[Tile]:
@@ -197,20 +313,36 @@ def load_tiles(paths: list[str], s: Settings, cache_dir: str | Path | None = Non
     return out
 
 
-def prepare_tiles(folder: str | Path, s: Settings, cache_dir: str | Path | None = None,
-                  progress=None) -> list[Tile]:
+def prepare_tiles_report(folder: str | Path, s: Settings, cache_dir: str | Path | None = None,
+                         progress=None) -> tuple[list[Tile], list[Record]]:
+    """Like prepare_tiles but also returns one Record per input photo."""
     paths = list_images(folder)
     cache = None
     if cache_dir:
         cache = Path(cache_dir)
         cache.mkdir(parents=True, exist_ok=True)
     tiles: list[Tile] = []
+    recs: list[Record] = []
     with ThreadPoolExecutor(max_workers=8) as ex:
-        for i, t in enumerate(ex.map(lambda p: _process_one(p, s, cache), paths)):
+        for i, (t, r) in enumerate(ex.map(lambda p: _process_ex(p, s, cache), paths)):
+            recs.append(r)
             if t is not None:
                 tiles.append(t)
             if progress:
                 progress(i + 1, len(paths))
+    ok = [r for r in recs if r.status == "ok"]            # same order as `tiles`
     if s.dedupe and len(tiles) > 1:
-        tiles = _dedupe(tiles)
-    return tiles
+        keep, dropped = _dedupe_ex(tiles)
+        for d, k in dropped.items():
+            ok[d].status, ok[d].duplicate_of = "duplicate", ok[k].path
+            ok[d].reason = f"near-duplicate of {Path(ok[k].path).name}"
+        tiles = [tiles[i] for i in keep]
+        ok = [ok[i] for i in keep]
+    for n, r in enumerate(ok):
+        r.tile_index = n
+    return tiles, recs
+
+
+def prepare_tiles(folder: str | Path, s: Settings, cache_dir: str | Path | None = None,
+                  progress=None) -> list[Tile]:
+    return prepare_tiles_report(folder, s, cache_dir, progress)[0]
