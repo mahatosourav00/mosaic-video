@@ -154,7 +154,7 @@ def test_add_plugin_button_links_and_shows_the_new_card(home, monkeypatch):
     monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: None))
     w._add_plugin()
     assert "hello" in w.state.plugins and "plugin.hello.0" in w.pages
-    assert w.top.currentIndex() == 0 and w.top.count() == 2          # home rebuilt in place, flow still second
+    assert w.top.currentIndex() == 0 and w.top.count() == 3          # home rebuilt in place; flow and library follow it
     assert "hello" in P.discover()                                    # and remembered for the next start
     w.start_flow("plugin:hello")
     assert w.keys == ["plugin.hello.0", "create"]

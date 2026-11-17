@@ -57,6 +57,8 @@ def _inspect(a) -> int:
 
 def _plugins(a) -> int:
     from . import plugins as P
+    if a.action in ("browse", "install", "uninstall"):
+        return _library(a)
     try:
         if a.action == "link":
             print(f"linked plugin '{P.link(a.folder)}' from {Path(a.folder).resolve()}")
@@ -67,6 +69,34 @@ def _plugins(a) -> int:
         return 1
     for p in P.discover().values():
         print(f"  {p.id:<14} {p.name}  v{p.manifest.get('version', '?')}  {p.path}")
+    return 0
+
+
+def _library(a) -> int:
+    """`plugins browse | install <id> | uninstall <id>`: the plugin library (see mosaicvid/library.py)."""
+    from . import library as L
+    from . import plugins as P
+    try:
+        if a.action == "uninstall":
+            print("removed" if L.remove(a.folder or "") else "not installed from the library (nothing removed)")
+            return 0
+        entries = L.fetch_catalog()
+        if a.action == "install":
+            e = next((x for x in entries if x.id == a.folder), None)
+            if e is None:
+                print(f"error: no plugin '{a.folder}' in the library (try: plugins browse)")
+                return 1
+            pl = L.install(e)
+            print(f"installed '{pl.id}' v{pl.manifest.get('version', '?')} to {pl.path}")
+            return 0
+        installed = P.discover()
+        for e in entries:
+            print(f"  {e.id:<14} {e.name}  v{e.version}  [{L.status(e, installed)}]  {e.description}")
+        if not entries:
+            print("  (the library has no plugins yet)")
+    except L.LibraryError as ex:
+        print(f"error: {ex}")
+        return 1
     return 0
 
 
@@ -97,9 +127,9 @@ def main(argv=None) -> int:
     i.add_argument("--tiles", required=True)
     i.add_argument("--out", required=True)
     i.add_argument("--cache-px", type=int)
-    pl = sub.add_parser("plugins", help="list, link or unlink plugin folders (see mosaicvid/plugins.py)")
-    pl.add_argument("action", choices=["list", "link", "unlink"])
-    pl.add_argument("folder", nargs="?", help="plugin project folder (link / unlink)")
+    pl = sub.add_parser("plugins", help="list, link/unlink plugin folders, or browse/install/uninstall from the library")
+    pl.add_argument("action", choices=["list", "link", "unlink", "browse", "install", "uninstall"])
+    pl.add_argument("folder", nargs="?", help="plugin folder (link / unlink) or plugin id (install / uninstall)")
     r = sub.add_parser("run", help="run a job file (used by the GUI); prints one JSON event per line")
     r.add_argument("--job", required=True, help="job JSON file (see mosaicvid/runner.py)")
     v = sub.add_parser("video", help="render the animation video from a built scene.json")

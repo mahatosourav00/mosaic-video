@@ -18,6 +18,48 @@ def _spacer() -> QWidget:
     return w
 
 
+def _show(v) -> str:
+    return "on" if v is True else "off" if v is False else str(v)
+
+
+def field_guide(f: dict) -> tuple[str, str, str]:
+    """What the "?" next to a plugin option explains: (title, explanation, recommendation).
+
+    A plugin can write its own with `tip` (a longer explanation than the short `help` line) and `recommended`.
+    Without them the guide is built from `help` plus what the control does, so every option has a "?"."""
+    typ, title = f.get("type"), f.get("label", f.get("key", ""))
+    lines = [t for t in (f.get("tip"), None if f.get("tip") else f.get("help")) if t]
+    how = {
+        "text": "Type your own text.",
+        "multiline": "Type or paste your text. Line breaks are kept.",
+        "list": "Type one item per line.",
+        "toggle": "Turn the switch on or off.",
+        "color": "Click the colour to choose another one.",
+        "file": "Click the box to browse for a file, or drop it there.",
+        "folder": "Click the box to browse for a folder, or drop it there.",
+    }.get(typ, "")
+    if typ == "number":
+        unit = f" {f['unit']}" if f.get("unit") else ""
+        how = f"Drag the slider to choose a value from {f['min']:g}{unit} to {f['max']:g}{unit}."
+    elif typ == "choice":
+        shown = ", ".join(str(o[1]) for o in f.get("options", []))
+        how = f"Pick one of: {shown}."
+    if typ in ("file", "folder") and f.get("filter"):
+        how += f" ({f['filter']})"
+    lines.append(how)
+    if f.get("required"):
+        lines.append("This one is required: the Next button waits until it is filled in.")
+    elif f.get("advanced"):
+        lines.append("Most people can leave this alone.")
+    rec = f.get("recommended", "")
+    if not rec and "default" in f and typ in ("number", "toggle", "choice", "color"):
+        d = f["default"]
+        if typ == "choice":
+            d = next((str(o[1]) for o in f.get("options", []) if str(o[0]) == str(d)), d)
+        rec = f"{_show(d)} (the default)"
+    return (title.replace("*", "").strip() or "Option", "  ".join(l for l in lines if l), rec)
+
+
 class ColorButton(QPushButton):
     def __init__(self, value: str, on_change):
         super().__init__()
@@ -136,7 +178,7 @@ class PluginStepPage(Page):
             self.setters[key] = lambda v, w=w: w.set_path(str(v), emit=False) if v else None
         if f.get("required") and "*" not in title:
             title += "  *"
-        lay.addWidget(OptionRow(title, None, _spacer() if wide else w, desc))
+        lay.addWidget(OptionRow(title, field_guide(f), _spacer() if wide else w, desc))
         if wide:
             lay.addWidget(w)
 

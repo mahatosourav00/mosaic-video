@@ -53,9 +53,9 @@ def card(layout_cls=QVBoxLayout, margins=(22, 20, 22, 20), spacing=14, flat=Fals
 
 # ------------------------------------------------------------------------------------------ help
 class HelpPopup(QFrame):
-    def __init__(self, key: str, parent=None):
+    def __init__(self, key, parent=None):
         super().__init__(parent, Qt.Popup)
-        title, body, rec = HELP.get(key, (key, "", ""))
+        title, body, rec = key if isinstance(key, tuple) else HELP.get(key, (key, "", ""))   # key, or (title, body, rec)
         self.setStyleSheet(f"QFrame#HelpPop {{ background: {C['card2']}; border: 1px solid {C['border_hi']};"
                            f" border-radius: 12px; }}")
         self.setObjectName("HelpPop")
@@ -75,13 +75,13 @@ class HelpPopup(QFrame):
 
 
 class HelpButton(QToolButton):
-    def __init__(self, key: str, parent=None):
+    def __init__(self, key, parent=None):
         super().__init__(parent)
         self.setObjectName("Help")
         self.setText("?")
         self.setCursor(Qt.PointingHandCursor)
         self.key = key
-        title, body, rec = HELP.get(key, (key, "", ""))
+        title, body, rec = key if isinstance(key, tuple) else HELP.get(key, (key, "", ""))
         self.setToolTip(f"{title}: click for help")
         self.clicked.connect(self._show)
 
@@ -216,7 +216,7 @@ class Segmented(QFrame):
 class OptionRow(QWidget):
     """label (+ help) and optional one-line description on the left, the control on the right."""
 
-    def __init__(self, title: str, help_key: str | None, control: QWidget, desc: str = "", parent=None):
+    def __init__(self, title: str, help_key, control: QWidget, desc: str = "", parent=None):
         super().__init__(parent)
         self.control = control
         outer = QHBoxLayout(self)

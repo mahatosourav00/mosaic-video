@@ -38,6 +38,9 @@ FIELD
     key       unique within the plugin; dotted keys ("people.her_name") become nested dicts in `ctx.nested()`
     type      text | multiline | number | toggle | choice | color | file | folder | list
     label, help, default
+    help      one short line under the label; it also feeds the "?" guide next to every option
+    tip       optional longer explanation for the "?" guide; recommended: optional text after "Recommended:"
+              (without them the guide is built from help + the control type + the default)
     number:   min, max, step, unit
     choice:   options [[value, "Text"], ...]
     file:     filter ("Music (*.mp3 *.wav)")      file/folder: prompt

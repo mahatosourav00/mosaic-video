@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (QFileDialog, QFrame, QHBoxLayout, QLabel, QMainWi
 from .coffee import Signature
 from .pages.create import CreatePage
 from .pages.home import HomePage
+from .pages.library import LibraryPage
 from .pages.look import LookPage
 from .pages.photos import PhotosPage
 from .pages.prepare import PreparePage
@@ -87,6 +88,11 @@ class MainWindow(QMainWindow):
         right.addWidget(foot)
         fl.addLayout(right, 1)
         self.top.addWidget(flow)
+        self.library = LibraryPage(self.state)
+        self.library.back.connect(lambda: self.top.setCurrentIndex(0))
+        self.library.changed.connect(self._library_changed)
+        self.library.confirm.connect(self._confirm_install)
+        self.top.addWidget(self.library)
         self.step = 0
 
     # ------------------------------------------------------------------ plugins
@@ -96,6 +102,7 @@ class MainWindow(QMainWindow):
         self.home = HomePage(self.state.plugins)
         self.home.chosen.connect(self.start_flow)
         self.home.add_plugin.connect(self._add_plugin)
+        self.home.open_library.connect(self._open_library)
         self.top.insertWidget(0, self.home)
         if old is not None:
             self.top.removeWidget(old)
@@ -114,6 +121,26 @@ class MainWindow(QMainWindow):
                 self.pages[pg.key] = pg
                 self.stack.addWidget(pg)
                 self.rail_names[pg.key] = pg.title
+
+    def _open_library(self):
+        self.library.load()
+        self.top.setCurrentWidget(self.library)
+
+    def _library_changed(self):
+        """A plugin was installed, updated or removed from the library: show it (or its absence) everywhere."""
+        self.state.plugins = plugin_api.discover()
+        self._make_plugin_pages()
+        self._make_home()
+        self.top.setCurrentWidget(self.library)              # _make_home returns to Home; stay in the library
+        self.library.render()
+
+    def _confirm_install(self, entry):
+        ans = QMessageBox.question(
+            self, "Install this plugin?",
+            f"Install “{entry.name}” v{entry.version}?\n\nA plugin is a program that runs on your computer. "
+            "Only install plugins from sources you trust.")
+        if ans == QMessageBox.Yes:
+            self.library.install(entry)
 
     def _add_plugin(self):
         folder = QFileDialog.getExistingDirectory(self, "Choose the plugin's folder (it contains plugin.json)",

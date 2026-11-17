@@ -106,6 +106,7 @@ class GoalCard(QFrame):
 class HomePage(QWidget):
     chosen = Signal(str)
     add_plugin = Signal()
+    open_library = Signal()
 
     def __init__(self, plugins: dict | None = None):
         super().__init__()
@@ -142,9 +143,20 @@ class HomePage(QWidget):
             c.clicked.connect(self.chosen)
             row.addWidget(c)
         lay.addLayout(row)
-        if plugins:                                   # one card per installed plugin, three to a row
-            lay.addSpacing(22)
-            lay.addWidget(label("Made for a purpose", "h2"))
+        lay.addSpacing(22)
+        purpose = QHBoxLayout()
+        purpose.addWidget(label("Made for a purpose", "h2"))
+        purpose.addStretch(1)
+        lib = QPushButton("Browse the plugin library…")
+        lib.setObjectName("Primary")
+        lib.setCursor(Qt.PointingHandCursor)
+        lib.setToolTip("Find ready-made plugins and install them with one click.")
+        lib.clicked.connect(self.open_library)
+        purpose.addWidget(lib)
+        lay.addLayout(purpose)
+        if not plugins:
+            lay.addWidget(label("No plugins yet. Open the library to find one.", "muted"))
+        if plugins:                                   # one card per installed plugin, two to a row
             grid = QGridLayout()
             grid.setHorizontalSpacing(22)
             grid.setVerticalSpacing(22)

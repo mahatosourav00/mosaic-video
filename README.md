@@ -115,6 +115,10 @@ my-plugin/
   <img src="docs/images/plugin-form.png" alt="A plugin's form, built from its plugin.json" width="80%">
 </p>
 
+- **Plugin library:** click **Browse the plugin library…** on the home screen to install, update or remove plugins in one
+  click (from the terminal: `python -m mosaicvid plugins browse | install <id> | uninstall <id>`). The catalog is
+  [`catalog/registry.json`](catalog/README.md); every download is checked against its SHA-256 before it is unpacked.
+- **A "?" on every option:** each plugin option has a guide; add `tip` and `recommended` to a field for a richer one.
 - **Add one:** click **Add a plugin…** on the home screen and pick its folder (or, from source,
   `python -m mosaicvid plugins link "path\to\my-plugin"`; `plugins list` and `plugins unlink` also exist). Plugins are also
   found in `%APPDATA%\MosaicStudio\plugins`. A broken plugin is skipped, never fatal.

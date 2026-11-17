@@ -1,0 +1,8 @@
+{"api": 1, "plugins": [
+  {"id": "birthday", "name": "Birthday video", "version": "1.0.0", "author": "Sourav Mahato",
+   "description": "A personal birthday film: a name drawn in the night sky, photos gathering into a mosaic portrait, your message and a music finale.",
+   "chips": ["Name + message", "Music", "9:16 video"],
+   "download": "birthday-1.0.0.zip",
+   "sha256": "84b7974d79eee3d03c4f071a87d3062ce8a99cf63604f3c747559032c54e615c",
+   "homepage": "https://github.com/mahatosourav00/mosaic-birthday-plugin"}
+]}
